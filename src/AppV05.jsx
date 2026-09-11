@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.4'
+const APP_VERSION = 'v0.6.5'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
