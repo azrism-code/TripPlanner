@@ -30,15 +30,15 @@ function timestampValue(value) {
 function authErrorMessage(error) {
   switch (error?.code) {
     case 'auth/operation-not-allowed':
-      return 'Email and password sign-in is not enabled yet.'
+      return 'התחברות באמצעות אימייל וסיסמה עדיין אינה פעילה.'
     case 'auth/email-already-in-use':
-      return 'An account already exists for this email. Try signing in instead.'
+      return 'כבר קיים חשבון עם כתובת האימייל הזאת. נסו להתחבר במקום להירשם.'
     case 'auth/invalid-credential':
-      return 'The email or password is incorrect.'
+      return 'האימייל או הסיסמה אינם נכונים.'
     case 'auth/weak-password':
-      return 'Use a password with at least 6 characters.'
+      return 'יש לבחור סיסמה באורך 6 תווים לפחות.'
     default:
-      return error?.message || 'Sign-in failed.'
+      return error?.message || 'ההתחברות נכשלה.'
   }
 }
 
@@ -80,7 +80,7 @@ function LoginScreen() {
         await signInWithRedirect(auth, googleProvider)
         return
       }
-      setError(err?.message || 'Google sign-in failed.')
+      setError(err?.message || 'ההתחברות עם Google נכשלה.')
       setBusy(false)
     }
   }
@@ -106,18 +106,18 @@ function LoginScreen() {
       <section className="auth-card">
         <div className="brand-mark">TP</div>
         <h1>TripPlanner</h1>
-        <p className="muted">Your trips, available everywhere — even offline.</p>
+        <p className="muted">כל הטיולים שלכם במקום אחד — גם בלי חיבור לרשת.</p>
 
         <button className="google-button" onClick={googleSignIn} disabled={busy}>
           <span className="google-g">G</span>
-          Continue with Google
+          המשך עם Google
         </button>
 
-        <div className="divider"><span>or</span></div>
+        <div className="divider"><span>או</span></div>
 
         <form onSubmit={emailSignIn} className="auth-form">
           <label>
-            Email
+            אימייל
             <input
               type="email"
               value={email}
@@ -127,7 +127,7 @@ function LoginScreen() {
             />
           </label>
           <label>
-            Password
+            סיסמה
             <input
               type="password"
               value={password}
@@ -139,7 +139,7 @@ function LoginScreen() {
           </label>
           {error && <div className="error-box">{error}</div>}
           <button className="primary-button" type="submit" disabled={busy}>
-            {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
+            {busy ? 'רק רגע…' : mode === 'register' ? 'יצירת חשבון' : 'כניסה'}
           </button>
         </form>
 
@@ -148,7 +148,7 @@ function LoginScreen() {
           onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
           disabled={busy}
         >
-          {mode === 'login' ? 'New to TripPlanner? Create an account' : 'Already have an account? Sign in'}
+          {mode === 'login' ? 'חדשים ב־TripPlanner? יצירת חשבון' : 'כבר יש לכם חשבון? כניסה'}
         </button>
       </section>
     </main>
@@ -199,13 +199,13 @@ function Dashboard({ user, profile }) {
         rows.sort((a, b) => timestampValue(b.updatedAt) - timestampValue(a.updatedAt))
         setTrips(rows)
       },
-      (err) => setError(err?.message || 'Could not load trips.')
+      (err) => setError(err?.message || 'לא הצלחנו לטעון את הטיולים.')
     )
   }, [user.uid])
 
   const firstName = useMemo(() => {
     const name = profile?.displayName || user.displayName || ''
-    return name.split(' ')[0] || 'Traveler'
+    return name.split(' ')[0] || 'מטיילים'
   }, [profile, user.displayName])
 
   async function createTrip(event) {
@@ -228,7 +228,7 @@ function Dashboard({ user, profile }) {
       setStartDate('')
       setEndDate('')
     } catch (err) {
-      setError(err?.message || 'Could not create the trip.')
+      setError(err?.message || 'לא הצלחנו ליצור את הטיול.')
     } finally {
       setCreating(false)
     }
@@ -240,7 +240,7 @@ function Dashboard({ user, profile }) {
         <div>
           <div className="app-title">TripPlanner</div>
           <div className={`connection-status ${online ? 'online' : 'offline'}`}>
-            {online ? 'Online' : 'Offline — changes will sync later'}
+            {online ? 'מחובר' : 'לא מחובר — השינויים יסונכרנו בהמשך'}
           </div>
         </div>
         <div className="account-area">
@@ -248,43 +248,43 @@ function Dashboard({ user, profile }) {
           <button className="avatar-button" title={user.email || 'Account'}>
             {user.photoURL ? <img src={user.photoURL} alt="" /> : (firstName[0] || 'U').toUpperCase()}
           </button>
-          <button className="secondary-button" onClick={() => signOut(auth)}>Sign out</button>
+          <button className="secondary-button" onClick={() => signOut(auth)}>יציאה</button>
         </div>
       </header>
 
-      <main className="dashboard">
+      <main className="dashboard" id="trips">
         <section className="hero">
-          <p className="eyebrow">MY TRIPS</p>
-          <h1>Hello, {firstName}</h1>
-          <p>Plan a new trip or continue working on one you already started.</p>
+          <p className="eyebrow">הטיולים שלי</p>
+          <h1>היי, {firstName}</h1>
+          <p>מתכננים טיול חדש או ממשיכים בדיוק מהמקום שבו עצרתם.</p>
         </section>
 
-        <section className="panel create-panel">
+        <section className="panel create-panel" id="new-trip">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">NEW</p>
-              <h2>Create a trip</h2>
+              <p className="eyebrow">טיול חדש</p>
+              <h2>לאן נוסעים?</h2>
             </div>
           </div>
           <form className="trip-form" onSubmit={createTrip}>
             <label>
-              Trip name
-              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Japan 2027" required />
+              שם הטיול
+              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="טיול קיץ" required />
             </label>
             <label>
-              Destination
-              <input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="Tokyo, Japan" />
+              יעד
+              <input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="תל אביב" />
             </label>
             <label>
-              Start date
+              תאריך התחלה
               <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </label>
             <label>
-              End date
+              תאריך סיום
               <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
             </label>
             <button className="primary-button create-button" type="submit" disabled={creating}>
-              {creating ? 'Creating…' : '+ Create trip'}
+              {creating ? 'יוצרים את הטיול…' : 'יצירת טיול +'}
             </button>
           </form>
           {error && <div className="error-box">{error}</div>}
@@ -293,8 +293,8 @@ function Dashboard({ user, profile }) {
         <section>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">YOUR LIBRARY</p>
-              <h2>{trips.length ? `${trips.length} ${trips.length === 1 ? 'trip' : 'trips'}` : 'No trips yet'}</h2>
+              <p className="eyebrow">הטיולים שלכם</p>
+              <h2>{trips.length ? `${trips.length} ${trips.length === 1 ? 'טיול' : 'טיולים'}` : 'עדיין אין טיולים'}</h2>
             </div>
           </div>
           {trips.length > 0 ? (
@@ -302,20 +302,24 @@ function Dashboard({ user, profile }) {
           ) : (
             <div className="empty-state">
               <div className="empty-icon">🧭</div>
-              <h3>Your first trip starts here</h3>
-              <p>Create a trip above. It will belong only to your account.</p>
+              <h3>הטיול הראשון מתחיל כאן</h3>
+              <p>צרו טיול חדש. רק אתם תוכלו לראות ולערוך אותו.</p>
             </div>
           )}
         </section>
 
         {profile?.role === 'admin' && (
           <section className="panel admin-panel">
-            <p className="eyebrow">ADMIN</p>
-            <h2>Admin access is enabled</h2>
-            <p>User management and global trip oversight will be added in the next build stage.</p>
+            <p className="eyebrow">ניהול</p>
+            <h2>גישת מנהל פעילה</h2>
+            <p>ניהול משתמשים וצפייה בכל הטיולים יתווספו בשלב הבא.</p>
           </section>
         )}
       </main>
+      <nav className="bottom-nav" aria-label="ניווט ראשי">
+        <a href="#trips"><span>🧭</span>הטיולים שלי</a>
+        <a className="bottom-nav-primary" href="#new-trip"><span>＋</span>טיול חדש</a>
+      </nav>
     </div>
   )
 }
@@ -364,7 +368,7 @@ export default function App() {
     return (
       <main className="loading-page">
         <div className="brand-mark">TP</div>
-        <p>Loading TripPlanner…</p>
+        <p>TripPlanner נטען…</p>
       </main>
     )
   }
