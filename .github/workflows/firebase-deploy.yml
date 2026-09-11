@@ -21,8 +21,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies
+      - name: Install app dependencies
         run: npm install
+
+      - name: Install function dependencies
+        run: npm --prefix functions install
 
       - name: Build application
         run: npm run build
@@ -68,7 +71,7 @@ jobs:
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
-              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              grant_type: 'urn:ietf:params:oauth-type:jwt-bearer'.replace('type', 'grant-type'),
               assertion
             })
           })
@@ -117,15 +120,11 @@ jobs:
               body: JSON.stringify({ name: releaseName, rulesetName: ruleset.name })
             })
             const created = await createResponse.json()
-            if (!createResponse.ok) {
-              throw new Error(`Could not create Firestore rules release: ${JSON.stringify(created)}`)
-            }
+            if (!createResponse.ok) throw new Error(`Could not create Firestore rules release: ${JSON.stringify(created)}`)
             console.log(`Firestore rules released: ${created.name}`)
           } else {
             const patched = await patchResponse.json()
-            if (!patchResponse.ok) {
-              throw new Error(`Could not update Firestore rules release: ${JSON.stringify(patched)}`)
-            }
+            if (!patchResponse.ok) throw new Error(`Could not update Firestore rules release: ${JSON.stringify(patched)}`)
             console.log(`Firestore rules released: ${patched.name}`)
           }
           NODE
@@ -135,3 +134,8 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
         run: node scripts/deploy-storage-rules.mjs
+
+      - name: Deploy Cloud Functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: npx --yes firebase-tools@latest deploy --only functions --project tripplanner-94835 --non-interactive
