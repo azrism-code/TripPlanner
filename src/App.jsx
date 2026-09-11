@@ -27,6 +27,21 @@ function timestampValue(value) {
   return 0
 }
 
+function authErrorMessage(error) {
+  switch (error?.code) {
+    case 'auth/operation-not-allowed':
+      return 'Email and password sign-in is not enabled yet.'
+    case 'auth/email-already-in-use':
+      return 'An account already exists for this email. Try signing in instead.'
+    case 'auth/invalid-credential':
+      return 'The email or password is incorrect.'
+    case 'auth/weak-password':
+      return 'Use a password with at least 6 characters.'
+    default:
+      return error?.message || 'Sign-in failed.'
+  }
+}
+
 async function ensureUserProfile(user) {
   const ref = doc(db, 'users', user.uid)
   const snapshot = await getDoc(ref)
@@ -81,7 +96,7 @@ function LoginScreen() {
         await signInWithEmailAndPassword(auth, email.trim(), password)
       }
     } catch (err) {
-      setError(err?.message || 'Sign-in failed.')
+      setError(authErrorMessage(err))
       setBusy(false)
     }
   }
