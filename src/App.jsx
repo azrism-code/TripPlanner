@@ -20,6 +20,8 @@ import {
 } from 'firebase/firestore'
 import { auth, db, googleProvider } from './firebase.js'
 
+const APP_VERSION = 'v0.1.0'
+
 function timestampValue(value) {
   if (!value) return 0
   if (typeof value.toMillis === 'function') return value.toMillis()
@@ -105,7 +107,7 @@ function LoginScreen() {
     <main className="auth-page">
       <section className="auth-card">
         <div className="brand-mark">TP</div>
-        <h1>TripPlanner</h1>
+        <h1>TripPlanner <small>{APP_VERSION}</small></h1>
         <p className="muted">כל הטיולים שלכם במקום אחד — גם בלי חיבור לרשת.</p>
 
         <button className="google-button" onClick={googleSignIn} disabled={busy}>
@@ -238,7 +240,7 @@ function Dashboard({ user, profile }) {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <div className="app-title">TripPlanner</div>
+          <div className="app-title">TripPlanner <small>{APP_VERSION}</small></div>
           <div className={`connection-status ${online ? 'online' : 'offline'}`}>
             {online ? 'מחובר' : 'לא מחובר — השינויים יסונכרנו בהמשך'}
           </div>
@@ -368,7 +370,7 @@ export default function App() {
     return (
       <main className="loading-page">
         <div className="brand-mark">TP</div>
-        <p>TripPlanner נטען…</p>
+        <p>TripPlanner {APP_VERSION} נטען…</p>
       </main>
     )
   }
