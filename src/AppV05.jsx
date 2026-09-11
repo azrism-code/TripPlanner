@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.3'
+const APP_VERSION = 'v0.6.4'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -833,9 +833,18 @@ function TripPlanner({ user, profile }) {
     setModuleError('')
     setSmartImportStatus((current) => ({ ...current, [section]: 'מעלה את הקובץ…' }))
     try {
-      await uploadLinkedFile(file, category, 'documents', '')
+      const uploaded = await uploadLinkedFile(file, category, 'documents', '')
+      setSmartImportStatus((current) => ({ ...current, [section]: 'הקובץ הועלה. מפענח וממלא את הפרטים…' }))
+      const token = await user.getIdToken()
+      const response = await fetch(DOCUMENT_ANALYSIS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tripId: activeTrip.id, documentId: uploaded.documentId, force: false })
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body?.error || 'הפענוח נכשל.')
       setSmartImportFiles((current) => ({ ...current, [section]: null }))
-      setSmartImportStatus((current) => ({ ...current, [section]: 'הקובץ הועלה ונשלח לפענוח. הפרטים יופיעו כאן אוטומטית בסיום.' }))
+      setSmartImportStatus((current) => ({ ...current, [section]: body?.skipped ? 'הפענוח האוטומטי התחיל. הפרטים יופיעו כאן בסיום.' : 'הפענוח הושלם והפרטים נשמרו.' }))
       const input = document.getElementById(`smart-import-${section}`)
       if (input) input.value = ''
     } catch (err) {
