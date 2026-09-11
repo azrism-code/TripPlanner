@@ -10,8 +10,10 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -20,7 +22,9 @@ import {
 } from 'firebase/firestore'
 import { auth, db, googleProvider } from './firebase.js'
 
-const APP_VERSION = 'v0.2.0'
+const APP_VERSION = 'v0.3.0'
+const MODULE_COLLECTIONS = ['takeItems', 'hotels', 'cars', 'expenses']
+const CURRENCIES = ['ILS', 'USD', 'EUR', 'JPY', 'GBP']
 
 function normalizeEmail(value) {
   return (value || '').trim().toLowerCase()
@@ -31,6 +35,19 @@ function timestampValue(value) {
   if (typeof value.toMillis === 'function') return value.toMillis()
   if (typeof value.seconds === 'number') return value.seconds * 1000
   return 0
+}
+
+function formatMoney(value, currency = 'ILS') {
+  const numeric = Number(value) || 0
+  try {
+    return new Intl.NumberFormat('he-IL', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: currency === 'JPY' ? 0 : 2
+    }).format(numeric)
+  } catch {
+    return `${numeric.toLocaleString('he-IL')} ${currency}`
+  }
 }
 
 function authErrorMessage(error) {
@@ -181,6 +198,16 @@ function TripCard({ trip, currentUserId, onOpen }) {
   )
 }
 
+function SectionHeader({ eyebrow, title, subtitle }) {
+  return (
+    <section className="section-hero">
+      <p className="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      {subtitle && <p>{subtitle}</p>}
+    </section>
+  )
+}
+
 function TripPlanner({ user, profile }) {
   const [ownedTrips, setOwnedTrips] = useState([])
   const [sharedTrips, setSharedTrips] = useState([])
@@ -191,6 +218,7 @@ function TripPlanner({ user, profile }) {
   const [screen, setScreen] = useState('guide')
   const [menuOpen, setMenuOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const [title, setTitle] = useState('')
   const [destination, setDestination] = useState('')
@@ -200,10 +228,31 @@ function TripPlanner({ user, profile }) {
 
   const [shareEmail, setShareEmail] = useState('')
   const [sharing, setSharing] = useState(false)
+  const [deletingTrip, setDeletingTrip] = useState(false)
+
+  const [takeItems, setTakeItems] = useState([])
+  const [hotels, setHotels] = useState([])
+  const [cars, setCars] = useState([])
+  const [expenses, setExpenses] = useState([])
+
+  const [takeText, setTakeText] = useState('')
+  const [hotelForm, setHotelForm] = useState({
+    name: '', city: '', checkIn: '', checkOut: '', bookingRef: '', notes: ''
+  })
+  const [carForm, setCarForm] = useState({
+    company: '', pickup: '', dropoff: '', pickupDate: '', dropoffDate: '', bookingRef: '', notes: ''
+  })
+  const [expenseForm, setExpenseForm] = useState({
+    description: '', category: 'כללי', amount: ''
+  })
+  const [budgetLimit, setBudgetLimit] = useState('')
+  const [budgetCurrency, setBudgetCurrency] = useState('ILS')
+  const [savingBudget, setSavingBudget] = useState(false)
 
   const [online, setOnline] = useState(navigator.onLine)
   const [error, setError] = useState('')
   const [shareError, setShareError] = useState('')
+  const [moduleError, setModuleError] = useState('')
 
   const userEmail = normalizeEmail(user.email)
 
@@ -275,10 +324,10 @@ function TripPlanner({ user, profile }) {
     [trips, activeTripId]
   )
 
-  const firstName = useMemo(() => {
-    const name = profile?.displayName || user.displayName || ''
-    return name.split(' ')[0] || 'מטיילים'
-  }, [profile, user.displayName])
+  const activeTripIsReadOnly = activeTrip && activeTrip.ownerId !== user.uid
+  const activeTripShares = activeTrip && Array.isArray(activeTrip.sharedWithEmails)
+    ? activeTrip.sharedWithEmails.map(normalizeEmail).filter(Boolean)
+    : []
 
   useEffect(() => {
     if (!ownedReady || !sharedReady || initialTripResolved) return
@@ -297,8 +346,8 @@ function TripPlanner({ user, profile }) {
   }, [ownedReady, sharedReady, initialTripResolved, trips, profile?.lastTripId])
 
   useEffect(() => {
-    if (!initialTripResolved || !ownedReady || !sharedReady || !activeTripId) return
-    if (trips.some((trip) => trip.id === activeTripId)) return
+    if (!initialTripResolved || !ownedReady || !sharedReady) return
+    if (activeTripId && trips.some((trip) => trip.id === activeTripId)) return
 
     if (trips.length > 0) {
       setActiveTripId(trips[0].id)
@@ -308,6 +357,49 @@ function TripPlanner({ user, profile }) {
       setScreen('new')
     }
   }, [trips, activeTripId, initialTripResolved, ownedReady, sharedReady])
+
+  useEffect(() => {
+    if (!activeTripId) {
+      setTakeItems([])
+      setHotels([])
+      setCars([])
+      setExpenses([])
+      return undefined
+    }
+
+    setModuleError('')
+    const tripRef = doc(db, 'trips', activeTripId)
+    const unsubs = [
+      onSnapshot(collection(tripRef, 'takeItems'), (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        rows.sort((a, b) => timestampValue(a.createdAt) - timestampValue(b.createdAt))
+        setTakeItems(rows)
+      }, (err) => setModuleError(err?.message || 'לא הצלחנו לטעון את רשימת לקחת.')),
+      onSnapshot(collection(tripRef, 'hotels'), (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        rows.sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''))
+        setHotels(rows)
+      }, (err) => setModuleError(err?.message || 'לא הצלחנו לטעון מלונות.')),
+      onSnapshot(collection(tripRef, 'cars'), (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        rows.sort((a, b) => (a.pickupDate || '').localeCompare(b.pickupDate || ''))
+        setCars(rows)
+      }, (err) => setModuleError(err?.message || 'לא הצלחנו לטעון השכרות רכב.')),
+      onSnapshot(collection(tripRef, 'expenses'), (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        rows.sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt))
+        setExpenses(rows)
+      }, (err) => setModuleError(err?.message || 'לא הצלחנו לטעון הוצאות.'))
+    ]
+
+    return () => unsubs.forEach((unsubscribe) => unsubscribe())
+  }, [activeTripId])
+
+  useEffect(() => {
+    if (!activeTrip) return
+    setBudgetLimit(activeTrip.budgetLimit ? String(activeTrip.budgetLimit) : '')
+    setBudgetCurrency(activeTrip.budgetCurrency || 'ILS')
+  }, [activeTrip?.id, activeTrip?.budgetLimit, activeTrip?.budgetCurrency])
 
   async function rememberTrip(tripId) {
     try {
@@ -325,8 +417,19 @@ function TripPlanner({ user, profile }) {
     setScreen('guide')
     setMenuOpen(false)
     setShareOpen(false)
+    setDeleteOpen(false)
     setError('')
     rememberTrip(trip.id)
+  }
+
+  function openSection(nextScreen) {
+    if (!activeTrip) return
+    setScreen(nextScreen)
+    setMenuOpen(false)
+    setShareOpen(false)
+    setDeleteOpen(false)
+    setModuleError('')
+    rememberTrip(activeTrip.id)
   }
 
   async function createTrip(event) {
@@ -349,6 +452,8 @@ function TripPlanner({ user, profile }) {
         startDate,
         endDate,
         sharedWithEmails: [],
+        budgetLimit: 0,
+        budgetCurrency: 'ILS',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       })
@@ -376,6 +481,7 @@ function TripPlanner({ user, profile }) {
   function showTrips() {
     setScreen('trips')
     setShareOpen(false)
+    setDeleteOpen(false)
     setMenuOpen(false)
     setError('')
   }
@@ -383,29 +489,21 @@ function TripPlanner({ user, profile }) {
   function showNewTrip() {
     setScreen('new')
     setShareOpen(false)
+    setDeleteOpen(false)
     setMenuOpen(false)
     setError('')
   }
 
-  function showGuide() {
-    if (!activeTrip) return
-    setScreen('guide')
-    setShareOpen(false)
-    setMenuOpen(false)
-    rememberTrip(activeTrip.id)
-  }
-
   function showShare() {
-    if (!activeTrip || activeTrip.ownerId !== user.uid) return
+    if (!activeTrip || activeTripIsReadOnly) return
     setShareOpen(true)
-    setScreen('guide')
     setMenuOpen(false)
     setShareError('')
   }
 
   async function addShare(event) {
     event.preventDefault()
-    if (!activeTrip || activeTrip.ownerId !== user.uid) return
+    if (!activeTrip || activeTripIsReadOnly) return
 
     const emailToAdd = normalizeEmail(shareEmail)
     if (!emailToAdd) return
@@ -415,10 +513,7 @@ function TripPlanner({ user, profile }) {
       return
     }
 
-    const currentShares = Array.isArray(activeTrip.sharedWithEmails)
-      ? activeTrip.sharedWithEmails.map(normalizeEmail).filter(Boolean)
-      : []
-
+    const currentShares = activeTripShares
     if (currentShares.includes(emailToAdd)) {
       setShareError('המשתמש הזה כבר מקבל גישה לטיול.')
       return
@@ -441,18 +536,13 @@ function TripPlanner({ user, profile }) {
   }
 
   async function removeShare(emailToRemove) {
-    if (!activeTrip || activeTrip.ownerId !== user.uid) return
-
-    const currentShares = Array.isArray(activeTrip.sharedWithEmails)
-      ? activeTrip.sharedWithEmails.map(normalizeEmail).filter(Boolean)
-      : []
-
+    if (!activeTrip || activeTripIsReadOnly) return
     setSharing(true)
     setShareError('')
 
     try {
       await setDoc(doc(db, 'trips', activeTrip.id), {
-        sharedWithEmails: currentShares.filter((email) => email !== emailToRemove),
+        sharedWithEmails: activeTripShares.filter((email) => email !== emailToRemove),
         updatedAt: serverTimestamp()
       }, { merge: true })
     } catch (err) {
@@ -462,23 +552,420 @@ function TripPlanner({ user, profile }) {
     }
   }
 
-  const activeTripIsReadOnly = activeTrip && activeTrip.ownerId !== user.uid
-  const activeTripShares = activeTrip && Array.isArray(activeTrip.sharedWithEmails)
-    ? activeTrip.sharedWithEmails.map(normalizeEmail).filter(Boolean)
-    : []
+  async function deleteCurrentTrip() {
+    if (!activeTrip || activeTripIsReadOnly) return
+    setDeletingTrip(true)
+    setModuleError('')
+
+    try {
+      for (const subcollectionName of MODULE_COLLECTIONS) {
+        const snapshot = await getDocs(collection(db, 'trips', activeTrip.id, subcollectionName))
+        await Promise.all(snapshot.docs.map((item) => deleteDoc(item.ref)))
+      }
+      await deleteDoc(doc(db, 'trips', activeTrip.id))
+      await setDoc(doc(db, 'users', user.uid), {
+        lastTripId: null,
+        lastTripViewedAt: serverTimestamp()
+      }, { merge: true })
+      setDeleteOpen(false)
+      setActiveTripId(null)
+      setScreen('trips')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו למחוק את הטיול.')
+      setDeleteOpen(false)
+    } finally {
+      setDeletingTrip(false)
+    }
+  }
+
+  async function addTakeItem(event) {
+    event.preventDefault()
+    if (!activeTrip || activeTripIsReadOnly || !takeText.trim()) return
+    try {
+      await addDoc(collection(db, 'trips', activeTrip.id, 'takeItems'), {
+        text: takeText.trim(),
+        done: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+      setTakeText('')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו להוסיף פריט.')
+    }
+  }
+
+  async function toggleTakeItem(item) {
+    if (!activeTrip || activeTripIsReadOnly) return
+    try {
+      await setDoc(doc(db, 'trips', activeTrip.id, 'takeItems', item.id), {
+        done: !item.done,
+        updatedAt: serverTimestamp()
+      }, { merge: true })
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו לעדכן את הפריט.')
+    }
+  }
+
+  async function removeModuleItem(collectionName, itemId, fallbackMessage) {
+    if (!activeTrip || activeTripIsReadOnly) return
+    try {
+      await deleteDoc(doc(db, 'trips', activeTrip.id, collectionName, itemId))
+    } catch (err) {
+      setModuleError(err?.message || fallbackMessage)
+    }
+  }
+
+  async function addHotel(event) {
+    event.preventDefault()
+    if (!activeTrip || activeTripIsReadOnly || !hotelForm.name.trim()) return
+    if (hotelForm.checkIn && hotelForm.checkOut && hotelForm.checkOut < hotelForm.checkIn) {
+      setModuleError('תאריך היציאה מהמלון לא יכול להיות לפני תאריך הכניסה.')
+      return
+    }
+    try {
+      await addDoc(collection(db, 'trips', activeTrip.id, 'hotels'), {
+        ...hotelForm,
+        name: hotelForm.name.trim(),
+        city: hotelForm.city.trim(),
+        bookingRef: hotelForm.bookingRef.trim(),
+        notes: hotelForm.notes.trim(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+      setHotelForm({ name: '', city: '', checkIn: '', checkOut: '', bookingRef: '', notes: '' })
+      setModuleError('')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו להוסיף מלון.')
+    }
+  }
+
+  async function addCar(event) {
+    event.preventDefault()
+    if (!activeTrip || activeTripIsReadOnly || !carForm.company.trim()) return
+    if (carForm.pickupDate && carForm.dropoffDate && carForm.dropoffDate < carForm.pickupDate) {
+      setModuleError('תאריך ההחזרה לא יכול להיות לפני תאריך האיסוף.')
+      return
+    }
+    try {
+      await addDoc(collection(db, 'trips', activeTrip.id, 'cars'), {
+        ...carForm,
+        company: carForm.company.trim(),
+        pickup: carForm.pickup.trim(),
+        dropoff: carForm.dropoff.trim(),
+        bookingRef: carForm.bookingRef.trim(),
+        notes: carForm.notes.trim(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+      setCarForm({
+        company: '', pickup: '', dropoff: '', pickupDate: '', dropoffDate: '', bookingRef: '', notes: ''
+      })
+      setModuleError('')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו להוסיף השכרת רכב.')
+    }
+  }
+
+  async function saveBudget(event) {
+    event.preventDefault()
+    if (!activeTrip || activeTripIsReadOnly) return
+    setSavingBudget(true)
+    setModuleError('')
+    try {
+      await setDoc(doc(db, 'trips', activeTrip.id), {
+        budgetLimit: Number(budgetLimit) || 0,
+        budgetCurrency,
+        updatedAt: serverTimestamp()
+      }, { merge: true })
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו לשמור את התקציב.')
+    } finally {
+      setSavingBudget(false)
+    }
+  }
+
+  async function addExpense(event) {
+    event.preventDefault()
+    if (!activeTrip || activeTripIsReadOnly || !expenseForm.description.trim()) return
+    const amount = Number(expenseForm.amount)
+    if (!(amount > 0)) {
+      setModuleError('יש להזין סכום גדול מאפס.')
+      return
+    }
+    try {
+      await addDoc(collection(db, 'trips', activeTrip.id, 'expenses'), {
+        description: expenseForm.description.trim(),
+        category: expenseForm.category,
+        amount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+      setExpenseForm({ description: '', category: 'כללי', amount: '' })
+      setModuleError('')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו להוסיף הוצאה.')
+    }
+  }
+
+  const spent = useMemo(
+    () => expenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0),
+    [expenses]
+  )
+  const savedBudget = Number(activeTrip?.budgetLimit) || 0
+  const currency = activeTrip?.budgetCurrency || 'ILS'
+  const remaining = savedBudget - spent
+  const packedCount = takeItems.filter((item) => item.done).length
+
+  function renderGuide() {
+    return (
+      <>
+        <section className="trip-hero">
+          <div className="trip-hero-title">
+            <div>
+              <p className="eyebrow">{activeTripIsReadOnly ? 'שותף איתי' : 'הטיול שלי'}</p>
+              <h1>{activeTrip.title}</h1>
+              {activeTrip.destination && <p className="trip-destination">📍 {activeTrip.destination}</p>}
+            </div>
+            {activeTripIsReadOnly && <span className="readonly-badge">צפייה בלבד</span>}
+          </div>
+          {(activeTrip.startDate || activeTrip.endDate) && (
+            <div className="trip-date-banner">
+              📅 {[activeTrip.startDate, activeTrip.endDate].filter(Boolean).join(' → ')}
+            </div>
+          )}
+        </section>
+
+        {activeTripIsReadOnly && (
+          <div className="readonly-notice">
+            הטיול שותף איתך לצפייה בלבד. אפשר להשתמש בכל המידע, אך רק מנהל הטיול יכול לשנות אותו.
+          </div>
+        )}
+
+        <section className="dashboard-cards">
+          <button className="feature-card" type="button" onClick={() => openSection('take')}>
+            <span className="feature-icon">🧳</span>
+            <div><strong>רשימת לקחת</strong><small>{packedCount}/{takeItems.length} מוכנים</small></div>
+            <b>←</b>
+          </button>
+          <button className="feature-card" type="button" onClick={() => openSection('hotels')}>
+            <span className="feature-icon">🏨</span>
+            <div><strong>מלונות</strong><small>{hotels.length ? `${hotels.length} הזמנות` : 'עדיין אין מלונות'}</small></div>
+            <b>←</b>
+          </button>
+          <button className="feature-card" type="button" onClick={() => openSection('cars')}>
+            <span className="feature-icon">🚗</span>
+            <div><strong>השכרת רכב</strong><small>{cars.length ? `${cars.length} הזמנות` : 'עדיין אין רכבים'}</small></div>
+            <b>←</b>
+          </button>
+          <button className="feature-card" type="button" onClick={() => openSection('budget')}>
+            <span className="feature-icon">💰</span>
+            <div><strong>תקציב והוצאות</strong><small>{formatMoney(spent, currency)} הוצאות</small></div>
+            <b>←</b>
+          </button>
+        </section>
+
+        <section className="panel itinerary-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">המדריך</p>
+              <h2>מסלול הטיול</h2>
+            </div>
+          </div>
+          <div className="coming-soon-row">
+            <span>📅</span>
+            <div>
+              <strong>המסלול היומי יהיה השלב הבא</strong>
+              <p>כאן נוסיף ימים, שעות, מקומות, טיפים ומפה — באותו סגנון של Japan Trip.</p>
+            </div>
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  function renderTake() {
+    return (
+      <>
+        <SectionHeader
+          eyebrow="הכנות לטיול"
+          title="רשימת לקחת"
+          subtitle={`${packedCount} מתוך ${takeItems.length} פריטים מוכנים`}
+        />
+        {!activeTripIsReadOnly && (
+          <form className="quick-add panel" onSubmit={addTakeItem}>
+            <input
+              value={takeText}
+              onChange={(event) => setTakeText(event.target.value)}
+              placeholder="למשל: דרכונים, מטען, תרופות…"
+              required
+            />
+            <button className="primary-button" type="submit">הוספה +</button>
+          </form>
+        )}
+        <section className="panel list-panel">
+          {takeItems.length ? takeItems.map((item) => (
+            <div className={`checklist-row ${item.done ? 'done' : ''}`} key={item.id}>
+              <button
+                className="check-toggle"
+                type="button"
+                onClick={() => toggleTakeItem(item)}
+                disabled={activeTripIsReadOnly}
+                aria-label={item.done ? 'סימון כלא ארוז' : 'סימון כארוז'}
+              >
+                {item.done ? '✓' : ''}
+              </button>
+              <span>{item.text}</span>
+              {!activeTripIsReadOnly && (
+                <button
+                  className="icon-danger"
+                  type="button"
+                  onClick={() => removeModuleItem('takeItems', item.id, 'לא הצלחנו למחוק את הפריט.')}
+                  aria-label="מחיקת פריט"
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          )) : (
+            <div className="empty-state compact-empty">
+              <div className="empty-icon">🧳</div>
+              <h3>הרשימה עדיין ריקה</h3>
+              <p>הוסיפו את הדברים שלא תרצו לשכוח.</p>
+            </div>
+          )}
+        </section>
+      </>
+    )
+  }
+
+  function renderHotels() {
+    return (
+      <>
+        <SectionHeader eyebrow="הזמנות" title="מלונות" subtitle="כל מקומות הלינה של הטיול במקום אחד" />
+        {!activeTripIsReadOnly && (
+          <section className="panel form-panel">
+            <form className="module-form" onSubmit={addHotel}>
+              <label>שם המלון<input value={hotelForm.name} onChange={(e) => setHotelForm({ ...hotelForm, name: e.target.value })} required /></label>
+              <label>עיר<input value={hotelForm.city} onChange={(e) => setHotelForm({ ...hotelForm, city: e.target.value })} /></label>
+              <label>כניסה<input type="date" value={hotelForm.checkIn} onChange={(e) => setHotelForm({ ...hotelForm, checkIn: e.target.value, checkOut: hotelForm.checkOut && hotelForm.checkOut < e.target.value ? '' : hotelForm.checkOut })} /></label>
+              <label>יציאה<input type="date" min={hotelForm.checkIn || undefined} value={hotelForm.checkOut} onChange={(e) => setHotelForm({ ...hotelForm, checkOut: e.target.value })} /></label>
+              <label>מספר הזמנה<input value={hotelForm.bookingRef} onChange={(e) => setHotelForm({ ...hotelForm, bookingRef: e.target.value })} /></label>
+              <label className="wide-field">הערות<textarea value={hotelForm.notes} onChange={(e) => setHotelForm({ ...hotelForm, notes: e.target.value })} rows="2" /></label>
+              <button className="primary-button module-submit" type="submit">הוספת מלון +</button>
+            </form>
+          </section>
+        )}
+        <div className="record-grid">
+          {hotels.length ? hotels.map((hotel) => (
+            <article className="record-card" key={hotel.id}>
+              <div className="record-head">
+                <div><span>🏨</span><h3>{hotel.name}</h3></div>
+                {!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeModuleItem('hotels', hotel.id, 'לא הצלחנו למחוק את המלון.')}>🗑️</button>}
+              </div>
+              {hotel.city && <p>📍 {hotel.city}</p>}
+              {(hotel.checkIn || hotel.checkOut) && <p>📅 {[hotel.checkIn, hotel.checkOut].filter(Boolean).join(' → ')}</p>}
+              {hotel.bookingRef && <p>🎟️ הזמנה: <strong>{hotel.bookingRef}</strong></p>}
+              {hotel.notes && <p className="record-notes">{hotel.notes}</p>}
+            </article>
+          )) : (
+            <div className="empty-state record-empty">
+              <div className="empty-icon">🏨</div><h3>אין עדיין מלונות</h3><p>הוסיפו את ההזמנות של הטיול.</p>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  function renderCars() {
+    return (
+      <>
+        <SectionHeader eyebrow="תחבורה" title="השכרת רכב" subtitle="פרטי האיסוף, ההחזרה ומספרי ההזמנה" />
+        {!activeTripIsReadOnly && (
+          <section className="panel form-panel">
+            <form className="module-form" onSubmit={addCar}>
+              <label>חברת השכרה<input value={carForm.company} onChange={(e) => setCarForm({ ...carForm, company: e.target.value })} required /></label>
+              <label>מקום איסוף<input value={carForm.pickup} onChange={(e) => setCarForm({ ...carForm, pickup: e.target.value })} /></label>
+              <label>מקום החזרה<input value={carForm.dropoff} onChange={(e) => setCarForm({ ...carForm, dropoff: e.target.value })} /></label>
+              <label>תאריך איסוף<input type="date" value={carForm.pickupDate} onChange={(e) => setCarForm({ ...carForm, pickupDate: e.target.value, dropoffDate: carForm.dropoffDate && carForm.dropoffDate < e.target.value ? '' : carForm.dropoffDate })} /></label>
+              <label>תאריך החזרה<input type="date" min={carForm.pickupDate || undefined} value={carForm.dropoffDate} onChange={(e) => setCarForm({ ...carForm, dropoffDate: e.target.value })} /></label>
+              <label>מספר הזמנה<input value={carForm.bookingRef} onChange={(e) => setCarForm({ ...carForm, bookingRef: e.target.value })} /></label>
+              <label className="wide-field">הערות<textarea value={carForm.notes} onChange={(e) => setCarForm({ ...carForm, notes: e.target.value })} rows="2" /></label>
+              <button className="primary-button module-submit" type="submit">הוספת רכב +</button>
+            </form>
+          </section>
+        )}
+        <div className="record-grid">
+          {cars.length ? cars.map((car) => (
+            <article className="record-card" key={car.id}>
+              <div className="record-head">
+                <div><span>🚗</span><h3>{car.company}</h3></div>
+                {!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeModuleItem('cars', car.id, 'לא הצלחנו למחוק את ההשכרה.')}>🗑️</button>}
+              </div>
+              {(car.pickup || car.dropoff) && <p>📍 {[car.pickup, car.dropoff].filter(Boolean).join(' → ')}</p>}
+              {(car.pickupDate || car.dropoffDate) && <p>📅 {[car.pickupDate, car.dropoffDate].filter(Boolean).join(' → ')}</p>}
+              {car.bookingRef && <p>🎟️ הזמנה: <strong>{car.bookingRef}</strong></p>}
+              {car.notes && <p className="record-notes">{car.notes}</p>}
+            </article>
+          )) : (
+            <div className="empty-state record-empty">
+              <div className="empty-icon">🚗</div><h3>אין עדיין השכרת רכב</h3><p>אם צריך רכב בטיול, הפרטים יופיעו כאן.</p>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  function renderBudget() {
+    return (
+      <>
+        <SectionHeader eyebrow="כספים" title="תקציב והוצאות" subtitle="מעקב פשוט אחר התקציב של הטיול" />
+        <section className="budget-summary">
+          <div><small>תקציב</small><strong>{formatMoney(savedBudget, currency)}</strong></div>
+          <div><small>הוצאות</small><strong>{formatMoney(spent, currency)}</strong></div>
+          <div className={remaining < 0 ? 'negative' : ''}><small>נותר</small><strong>{formatMoney(remaining, currency)}</strong></div>
+        </section>
+
+        {!activeTripIsReadOnly && (
+          <section className="panel form-panel">
+            <form className="budget-settings" onSubmit={saveBudget}>
+              <label>תקציב כולל<input type="number" min="0" step="0.01" value={budgetLimit} onChange={(e) => setBudgetLimit(e.target.value)} /></label>
+              <label>מטבע<select value={budgetCurrency} onChange={(e) => setBudgetCurrency(e.target.value)}>{CURRENCIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              <button className="secondary-button" type="submit" disabled={savingBudget}>{savingBudget ? 'שומרים…' : 'שמירת תקציב'}</button>
+            </form>
+            <div className="form-divider" />
+            <form className="expense-form" onSubmit={addExpense}>
+              <label>תיאור<input value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="ארוחת ערב, רכבת, כרטיס…" required /></label>
+              <label>קטגוריה<select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}><option>כללי</option><option>אוכל</option><option>תחבורה</option><option>מלון</option><option>אטרקציות</option><option>קניות</option></select></label>
+              <label>סכום<input type="number" min="0" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} required /></label>
+              <button className="primary-button" type="submit">הוספת הוצאה +</button>
+            </form>
+          </section>
+        )}
+
+        <section className="panel expense-list">
+          {expenses.length ? expenses.map((expense) => (
+            <div className="expense-row" key={expense.id}>
+              <div><strong>{expense.description}</strong><span>{expense.category || 'כללי'}</span></div>
+              <b>{formatMoney(expense.amount, currency)}</b>
+              {!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeModuleItem('expenses', expense.id, 'לא הצלחנו למחוק את ההוצאה.')}>🗑️</button>}
+            </div>
+          )) : (
+            <div className="empty-state compact-empty">
+              <div className="empty-icon">💰</div><h3>אין עדיין הוצאות</h3><p>הוצאות שתוסיפו יוצגו כאן.</p>
+            </div>
+          )}
+        </section>
+      </>
+    )
+  }
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-brand">
-          <button
-            className="menu-button"
-            type="button"
-            aria-label="פתיחת תפריט"
-            onClick={() => setMenuOpen(true)}
-          >
-            ☰
-          </button>
+          <button className="menu-button" type="button" aria-label="פתיחת תפריט" onClick={() => setMenuOpen(true)}>☰</button>
           <div>
             <div className="app-title">TripPlanner <small>{APP_VERSION}</small></div>
             <div className={`connection-status ${online ? 'online' : 'offline'}`}>
@@ -486,13 +973,9 @@ function TripPlanner({ user, profile }) {
             </div>
           </div>
         </div>
-
-        <div className="account-area">
-          {profile?.role === 'admin' && <span className="admin-badge">Admin</span>}
-          <button className="avatar-button" title={user.email || 'Account'} type="button">
-            {user.photoURL ? <img src={user.photoURL} alt="" /> : (firstName[0] || 'U').toUpperCase()}
-          </button>
-        </div>
+        <button className="account-button" title={user.email || 'Account'} type="button" onClick={() => setMenuOpen(true)}>
+          {user.photoURL ? <img src={user.photoURL} alt="" /> : <span>👤</span>}
+        </button>
       </header>
 
       {menuOpen && <button className="menu-overlay" aria-label="סגירת תפריט" onClick={() => setMenuOpen(false)} />}
@@ -500,255 +983,127 @@ function TripPlanner({ user, profile }) {
       <aside className={`side-menu ${menuOpen ? 'open' : ''}`} aria-hidden={!menuOpen}>
         <div className="menu-head">
           <div>
-            <strong>TripPlanner</strong>
+            <strong>{activeTrip?.title || 'TripPlanner'}</strong>
             <small>{user.email}</small>
           </div>
           <button className="menu-close" type="button" onClick={() => setMenuOpen(false)}>✕</button>
         </div>
 
         {activeTrip && (
-          <button className={screen === 'guide' && !shareOpen ? 'active' : ''} type="button" onClick={showGuide}>
-            🧭 הטיול הנוכחי
-            <small>{activeTrip.title}</small>
-          </button>
+          <>
+            <button className={screen === 'guide' ? 'active' : ''} type="button" onClick={() => openSection('guide')}>🧭 מסלול ומדריך</button>
+            <button className={screen === 'take' ? 'active' : ''} type="button" onClick={() => openSection('take')}>🧳 רשימת לקחת</button>
+            <button className={screen === 'hotels' ? 'active' : ''} type="button" onClick={() => openSection('hotels')}>🏨 מלונות</button>
+            <button className={screen === 'cars' ? 'active' : ''} type="button" onClick={() => openSection('cars')}>🚗 השכרת רכב</button>
+            <button className={screen === 'budget' ? 'active' : ''} type="button" onClick={() => openSection('budget')}>💰 תקציב והוצאות</button>
+          </>
         )}
 
-        <button className={screen === 'trips' ? 'active' : ''} type="button" onClick={showTrips}>
-          🗂️ כל הטיולים
-          <small>מעבר לטיול אחר</small>
-        </button>
-
-        <button className={screen === 'new' ? 'active' : ''} type="button" onClick={showNewTrip}>
-          ＋ טיול חדש
-          <small>יצירת טיול נוסף</small>
-        </button>
+        <div className="menu-divider" />
+        <button className={screen === 'trips' ? 'active' : ''} type="button" onClick={showTrips}>🗂️ כל הטיולים<small>מעבר לטיול אחר</small></button>
+        <button className={screen === 'new' ? 'active' : ''} type="button" onClick={showNewTrip}>＋ טיול חדש<small>יצירת טיול נוסף</small></button>
 
         {activeTrip && !activeTripIsReadOnly && (
-          <button className={shareOpen ? 'active' : ''} type="button" onClick={showShare}>
-            👨‍👩‍👧‍👦 שיתוף הטיול
-            <small>גישה למשפחה — צפייה בלבד</small>
-          </button>
+          <>
+            <button type="button" onClick={showShare}>👨‍👩‍👧‍👦 שיתוף הטיול<small>גישה למשפחה — צפייה בלבד</small></button>
+            <button className="danger-menu-button" type="button" onClick={() => { setDeleteOpen(true); setMenuOpen(false) }}>🗑️ מחיקת הטיול</button>
+          </>
         )}
 
-        {activeTripIsReadOnly && (
-          <div className="menu-readonly">👁️ הטיול הנוכחי שותף איתך בצפייה בלבד</div>
-        )}
+        {activeTripIsReadOnly && <div className="menu-readonly">👁️ הטיול הנוכחי שותף איתך בצפייה בלבד</div>}
 
         <div className="menu-spacer" />
-        <button className="logout-menu-button" type="button" onClick={() => signOut(auth)}>
-          יציאה
-        </button>
+        <button className="logout-menu-button" type="button" onClick={() => signOut(auth)}>יציאה</button>
       </aside>
 
-      <main className="dashboard">
+      <main className={`dashboard ${activeTrip ? 'with-bottom-nav' : ''}`}>
         {!ownedReady || !sharedReady || !initialTripResolved ? (
-          <section className="panel centered-panel">
-            <div className="empty-icon">🧭</div>
-            <p>טוענים את הטיולים…</p>
-          </section>
-        ) : screen === 'guide' ? (
-          activeTrip ? (
-            <>
-              <section className="trip-hero">
-                <div className="trip-hero-title">
-                  <div>
-                    <p className="eyebrow">{activeTripIsReadOnly ? 'שותף איתי' : 'הטיול שלי'}</p>
-                    <h1>{activeTrip.title}</h1>
-                    {activeTrip.destination && <p className="trip-destination">📍 {activeTrip.destination}</p>}
-                  </div>
-                  {activeTripIsReadOnly && <span className="readonly-badge">צפייה בלבד</span>}
-                </div>
-
-                {(activeTrip.startDate || activeTrip.endDate) && (
-                  <div className="trip-date-banner">
-                    📅 {[activeTrip.startDate, activeTrip.endDate].filter(Boolean).join(' → ')}
-                  </div>
-                )}
-              </section>
-
-              {activeTripIsReadOnly && (
-                <div className="readonly-notice">
-                  הטיול שותף איתך על ידי מנהל הטיול. אפשר לצפות בכל המידע, ללא אפשרות לשנות אותו.
-                </div>
-              )}
-
-              <section className="panel guide-panel">
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">המדריך שלי</p>
-                    <h2>מדריך הטיול</h2>
-                  </div>
-                </div>
-                <div className="guide-grid">
-                  <div className="guide-card">
-                    <span>📅</span>
-                    <strong>מסלול יומי</strong>
-                    <p>התכנון היומי של הטיול יופיע כאן.</p>
-                  </div>
-                  <div className="guide-card">
-                    <span>📍</span>
-                    <strong>מקומות</strong>
-                    <p>המקומות והאטרקציות של הטיול.</p>
-                  </div>
-                  <div className="guide-card">
-                    <span>🎟️</span>
-                    <strong>הזמנות</strong>
-                    <p>מלונות, טיסות והזמנות במקום אחד.</p>
-                  </div>
-                </div>
-              </section>
-
-              {shareOpen && !activeTripIsReadOnly && (
-                <section className="panel share-panel">
-                  <div className="section-heading">
-                    <div>
-                      <p className="eyebrow">משפחה</p>
-                      <h2>שיתוף הטיול</h2>
-                    </div>
-                    <button className="text-button" type="button" onClick={() => setShareOpen(false)}>סגירה</button>
-                  </div>
-
-                  <p className="muted">
-                    הוסיפו את כתובת האימייל שבה בן המשפחה משתמש ב־TripPlanner. הוא יקבל גישת צפייה בלבד.
-                  </p>
-
-                  <form className="share-form" onSubmit={addShare}>
-                    <label>
-                      אימייל של בן המשפחה
-                      <input
-                        type="email"
-                        value={shareEmail}
-                        onChange={(event) => setShareEmail(event.target.value)}
-                        placeholder="family@example.com"
-                        required
-                      />
-                    </label>
-                    <button className="primary-button" type="submit" disabled={sharing}>
-                      {sharing ? 'מעדכנים…' : 'שיתוף'}
-                    </button>
-                  </form>
-
-                  {shareError && <div className="error-box">{shareError}</div>}
-
-                  <div className="shared-users">
-                    <h3>משתמשים עם גישה</h3>
-                    {activeTripShares.length > 0 ? activeTripShares.map((email) => (
-                      <div className="shared-user-row" key={email}>
-                        <div>
-                          <strong>{email}</strong>
-                          <span>צפייה בלבד</span>
-                        </div>
-                        <button
-                          className="remove-share"
-                          type="button"
-                          onClick={() => removeShare(email)}
-                          disabled={sharing}
-                        >
-                          הסרה
-                        </button>
-                      </div>
-                    )) : (
-                      <p className="muted">הטיול עדיין לא שותף עם משתמשים נוספים.</p>
-                    )}
-                  </div>
-                </section>
-              )}
-            </>
-          ) : (
-            <section className="panel centered-panel">
-              <p>פותחים את הטיול…</p>
-            </section>
-          )
+          <section className="panel centered-panel"><div className="empty-icon">🧭</div><p>טוענים את הטיולים…</p></section>
         ) : screen === 'trips' ? (
           <>
-            <section className="hero compact-hero">
-              <p className="eyebrow">הטיולים שלי</p>
-              <h1>כל הטיולים</h1>
-              <p>בחרו טיול כדי לפתוח את המדריך שלו.</p>
-            </section>
-
+            <SectionHeader eyebrow="הטיולים שלי" title="כל הטיולים" subtitle="בחרו טיול כדי לפתוח אותו." />
             {error && <div className="error-box page-error">{error}</div>}
-
-            {trips.length > 0 ? (
+            {trips.length ? (
               <div className="trip-grid">
-                {trips.map((trip) => (
-                  <TripCard
-                    key={trip.id}
-                    trip={trip}
-                    currentUserId={user.uid}
-                    onOpen={openTrip}
-                  />
-                ))}
+                {trips.map((trip) => <TripCard key={trip.id} trip={trip} currentUserId={user.uid} onOpen={openTrip} />)}
               </div>
             ) : (
-              <div className="empty-state">
-                <div className="empty-icon">🧭</div>
-                <h3>הטיול הראשון מתחיל כאן</h3>
-                <p>עדיין אין טיולים. פתחו את התפריט ובחרו ״טיול חדש״.</p>
-              </div>
+              <div className="empty-state"><div className="empty-icon">🧭</div><h3>הטיול הראשון מתחיל כאן</h3><p>פתחו את התפריט ובחרו ״טיול חדש״.</p></div>
             )}
           </>
-        ) : (
+        ) : screen === 'new' ? (
           <>
-            <section className="hero compact-hero">
-              <p className="eyebrow">טיול חדש</p>
-              <h1>לאן נוסעים?</h1>
-              <p>צרו טיול חדש ומיד תעברו למדריך שלו.</p>
-            </section>
-
+            <SectionHeader eyebrow="טיול חדש" title="לאן נוסעים?" subtitle="צרו טיול חדש ומיד תעברו אליו." />
             <section className="panel create-panel">
               <form className="trip-form" onSubmit={createTrip}>
-                <label>
-                  שם הטיול
-                  <input
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    placeholder="טיול קיץ"
-                    required
-                  />
-                </label>
-                <label>
-                  יעד
-                  <input
-                    value={destination}
-                    onChange={(event) => setDestination(event.target.value)}
-                    placeholder="יפן"
-                  />
-                </label>
-                <label>
-                  תאריך התחלה
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(event) => handleStartDateChange(event.target.value)}
-                  />
-                </label>
-                <label>
-                  תאריך סיום
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={startDate || undefined}
-                    onChange={(event) => setEndDate(event.target.value)}
-                  />
-                </label>
-                <button className="primary-button create-button" type="submit" disabled={creating}>
-                  {creating ? 'יוצרים את הטיול…' : 'יצירת טיול +'}
-                </button>
+                <label>שם הטיול<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="טיול קיץ" required /></label>
+                <label>יעד<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="יפן" /></label>
+                <label>תאריך התחלה<input type="date" value={startDate} onChange={(event) => handleStartDateChange(event.target.value)} /></label>
+                <label>תאריך סיום<input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} /></label>
+                <button className="primary-button create-button" type="submit" disabled={creating}>{creating ? 'יוצרים את הטיול…' : 'יצירת טיול +'}</button>
               </form>
               {error && <div className="error-box form-error">{error}</div>}
             </section>
           </>
-        )}
-
-        {profile?.role === 'admin' && screen === 'trips' && (
-          <section className="panel admin-panel">
-            <p className="eyebrow">ניהול</p>
-            <h2>גישת מנהל פעילה</h2>
-            <p>ניהול משתמשים וצפייה מערכתית יתווספו בהמשך.</p>
-          </section>
+        ) : activeTrip ? (
+          <>
+            {moduleError && <div className="error-box page-error">{moduleError}</div>}
+            {screen === 'guide' && renderGuide()}
+            {screen === 'take' && renderTake()}
+            {screen === 'hotels' && renderHotels()}
+            {screen === 'cars' && renderCars()}
+            {screen === 'budget' && renderBudget()}
+          </>
+        ) : (
+          <section className="panel centered-panel"><p>פותחים את הטיול…</p></section>
         )}
       </main>
+
+      {activeTrip && screen !== 'trips' && screen !== 'new' && (
+        <nav className="bottom-nav" aria-label="ניווט ראשי">
+          <button className={screen === 'guide' ? 'active' : ''} type="button" onClick={() => openSection('guide')}>🧭<span>מדריך</span></button>
+          <button className={screen === 'take' ? 'active' : ''} type="button" onClick={() => openSection('take')}>🧳<span>לקחת</span></button>
+          <button className={screen === 'hotels' ? 'active' : ''} type="button" onClick={() => openSection('hotels')}>🏨<span>מלונות</span></button>
+          <button type="button" onClick={() => setMenuOpen(true)}>⋮<span>עוד</span></button>
+        </nav>
+      )}
+
+      {shareOpen && activeTrip && !activeTripIsReadOnly && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShareOpen(false) }}>
+          <section className="modal-card" role="dialog" aria-modal="true" aria-label="שיתוף הטיול">
+            <div className="modal-head"><div><p className="eyebrow">משפחה</p><h2>שיתוף הטיול</h2></div><button className="modal-close" type="button" onClick={() => setShareOpen(false)}>✕</button></div>
+            <p className="muted">הוסיפו את כתובת האימייל שבה בן המשפחה משתמש ב־TripPlanner. הוא יקבל גישת צפייה בלבד.</p>
+            <form className="share-form" onSubmit={addShare}>
+              <label>אימייל של בן המשפחה<input type="email" value={shareEmail} onChange={(event) => setShareEmail(event.target.value)} placeholder="family@example.com" required /></label>
+              <button className="primary-button" type="submit" disabled={sharing}>{sharing ? 'מעדכנים…' : 'שיתוף'}</button>
+            </form>
+            {shareError && <div className="error-box modal-error">{shareError}</div>}
+            <div className="shared-users">
+              <h3>משתמשים עם גישה</h3>
+              {activeTripShares.length ? activeTripShares.map((email) => (
+                <div className="shared-user-row" key={email}>
+                  <div><strong>{email}</strong><span>צפייה בלבד</span></div>
+                  <button className="remove-share" type="button" onClick={() => removeShare(email)} disabled={sharing}>הסרה</button>
+                </div>
+              )) : <p className="muted">הטיול עדיין לא שותף עם משתמשים נוספים.</p>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {deleteOpen && activeTrip && !activeTripIsReadOnly && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card delete-modal" role="dialog" aria-modal="true" aria-label="מחיקת טיול">
+            <div className="danger-icon">🗑️</div>
+            <h2>למחוק את ״{activeTrip.title}״?</h2>
+            <p>המחיקה תסיר את הטיול ואת המידע שנשמר בו. אי אפשר לבטל פעולה זו.</p>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setDeleteOpen(false)} disabled={deletingTrip}>ביטול</button>
+              <button className="danger-button" type="button" onClick={deleteCurrentTrip} disabled={deletingTrip}>{deletingTrip ? 'מוחקים…' : 'כן, למחוק'}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
