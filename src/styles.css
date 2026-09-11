@@ -156,6 +156,7 @@ input:focus { border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.12);
 }
 
 @media (max-width: 620px) {
+  body { font-size: 17px; }
   .topbar { min-height: 68px; padding: 10px 14px; }
   .secondary-button { display: none; }
   .dashboard { width: min(100% - 24px, 1180px); padding-top: 26px; }
@@ -164,6 +165,20 @@ input:focus { border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.12);
   .trip-form { grid-template-columns: 1fr; }
   .create-button { grid-column: auto; }
   .trip-grid { grid-template-columns: 1fr; }
-  .auth-page { padding: 14px; }
-  .auth-card { padding: 26px 20px; border-radius: 22px; }
+  .auth-page {
+    place-items: start center;
+    padding: max(22px, env(safe-area-inset-top)) 12px max(22px, env(safe-area-inset-bottom));
+  }
+  .auth-card {
+    width: 100%;
+    padding: 28px 22px;
+    border-radius: 22px;
+  }
+  .auth-card h1 { font-size: 2.25rem; }
+  .auth-card > .muted { font-size: 1rem; line-height: 1.5; }
+  .google-button, .primary-button, .secondary-button, .link-button { min-height: 52px; }
+  .auth-form { gap: 18px; }
+  .auth-form label { font-size: 1rem; }
+  input { min-height: 52px; font-size: 16px; }
+  .error-box { font-size: 1rem; line-height: 1.4; }
 }
