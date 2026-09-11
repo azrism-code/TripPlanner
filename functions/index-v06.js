@@ -200,7 +200,7 @@ async function extractTravelDocument(documentData, trip) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const fileBlock = documentData.contentType?.startsWith('image/')
     ? { type: 'input_image', image_url: documentData.downloadURL, detail: 'high' }
-    : { type: 'input_file', file_url: documentData.downloadURL, filename: documentData.name || 'booking.pdf' }
+    : { type: 'input_file', file_url: documentData.downloadURL }
 
   const response = await client.responses.create({
     model: process.env.OPENAI_IMPORT_MODEL || 'gpt-5.4-mini',
@@ -757,7 +757,7 @@ export const tripChat = onRequest({
       .slice(0, 10)
       .map((item) => item.contentType.startsWith('image/')
         ? { type: 'input_image', image_url: item.downloadURL, detail: 'auto' }
-        : { type: 'input_file', file_url: item.downloadURL, filename: item.name || 'travel-document.pdf' })
+        : { type: 'input_file', file_url: item.downloadURL })
 
     const historyText = history.map((item) => `${item.role === 'assistant' ? 'Trip AI' : 'User'}: ${item.text || ''}`).join('\n')
     const instructions = `You are Trip AI inside a travel-planning app. The authenticated user is the OWNER of this trip. Use trip data and uploaded documents as the source of truth. Uploaded booking/ticket documents have priority over manually typed booking facts. Never invent confirmation numbers, flight details, hotel bookings or dates. You may use write tools only when the owner explicitly asks to add, change, import, build or correct something. When building itinerary days, stay inside the trip start/end dates and respect known flights, hotels and car timings. Keep replies concise and practical. Reply in Hebrew unless the user writes in another language.`
