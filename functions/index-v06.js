@@ -464,7 +464,7 @@ async function importDocument(tripId, documentId, force = false) {
 
   const trip = tripSnapshot.data()
   const documentData = documentSnapshot.data()
-  if (!force && documentData.processingStatus === 'done' && documentData.extractionVersion === IMPORT_VERSION) {
+  if (!force && ['processing', 'done'].includes(documentData.processingStatus) && documentData.extractionVersion === IMPORT_VERSION) {
     return { skipped: true, summary: documentData.extractionSummary || '' }
   }
   if (!documentData.downloadURL) throw new Error('Document has no download URL')
@@ -542,7 +542,7 @@ export const analyzeDocument = onRequest({
       res.status(403).json({ error: 'Only the trip owner can analyze documents' })
       return
     }
-    const result = await importDocument(tripId, documentId, true)
+    const result = await importDocument(tripId, documentId, req.body?.force !== false)
     res.json(result)
   } catch (error) {
     console.error('Document analysis error', error)
