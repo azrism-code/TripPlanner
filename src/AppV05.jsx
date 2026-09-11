@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.2'
+const APP_VERSION = 'v0.6.3'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -641,7 +641,7 @@ function TripPlanner({ user, profile }) {
     if (!file) return {}
     if (file.size > 20 * 1024 * 1024) throw new Error('גודל הקובץ מוגבל ל־20MB.')
     const name = safeFileName(file.name)
-    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${name}`
+    const unique = `${user.uid}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${name}`
     const path = `trips/${activeTrip.id}/documents/${unique}`
     const objectRef = storageRef(storage, path)
     await Promise.race([
