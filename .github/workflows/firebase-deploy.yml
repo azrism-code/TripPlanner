@@ -125,4 +125,4 @@ jobs:
         if: steps.ai_secret.outputs.available == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
-        run: npx --yes firebase-tools@latest deploy --only functions --project tripplanner-94835 --non-interactive
+        run: npx --yes firebase-tools@latest deploy --only functions --project tripplanner-94835 --non-interactive --force
