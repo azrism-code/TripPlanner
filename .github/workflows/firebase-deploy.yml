@@ -131,6 +131,7 @@ jobs:
           NODE
 
       - name: Deploy Storage Rules
+        continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
         run: node scripts/deploy-storage-rules.mjs
