@@ -224,6 +224,64 @@
   gap: 12px;
 }
 
+.document-status {
+  margin: 0.35rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.reanalyze-button {
+  min-height: 44px;
+  margin-top: 0.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #3730a3;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reanalyze-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.smart-import-panel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 14px;
+  border: 1px solid #c4b5fd;
+  background: linear-gradient(135deg, #faf5ff, #eef2ff);
+}
+.smart-import-copy { display: flex; gap: 12px; align-items: flex-start; }
+.smart-import-copy > span { font-size: 1.8rem; }
+.smart-import-copy h3 { margin: 0 0 5px; }
+.smart-import-copy p { margin: 0; color: var(--muted); line-height: 1.5; }
+.smart-import-panel form { display: grid; gap: 10px; }
+.smart-file-picker {
+  display: grid;
+  place-items: center;
+  min-height: 54px;
+  padding: 10px;
+  border: 1.5px dashed #8b5cf6;
+  border-radius: 14px;
+  background: #fff;
+  color: #5b21b6;
+  font-weight: 800;
+  cursor: pointer;
+}
+.smart-file-picker input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
+.smart-import-panel small { overflow-wrap: anywhere; color: var(--muted); }
+.manual-entry { margin-bottom: 18px; }
+.manual-entry > summary { cursor: pointer; font-weight: 800; color: #475569; }
+.manual-form-panel { padding: 18px 0 0; box-shadow: none; border: 0; }
+.document-status.done { color: #047857; }
+.document-status.processing { color: #6d28d9; }
+.document-status.error, .document-error { color: #b91c1c; }
+.document-summary, .document-results { line-height: 1.5; }
+
 .chat-panel { display: grid; gap: 12px; }
 .empty-chat {
   margin: auto;
@@ -263,29 +321,4 @@
   .document-upload-form { grid-template-columns: 1fr; }
   .flight-form { grid-template-columns: 1fr; }
   .route-space { padding-top: 16px; }
-}
-
-
-.document-status {
-  margin: 0.35rem 0;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
-.reanalyze-button {
-  min-height: 44px;
-  margin-top: 0.75rem;
-  padding: 0.65rem 1rem;
-  border: 1px solid #c7d2fe;
-  border-radius: 12px;
-  background: #eef2ff;
-  color: #3730a3;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.reanalyze-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
 }

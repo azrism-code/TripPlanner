@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.5.1'
+const APP_VERSION = 'v0.6.0'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -284,6 +284,7 @@ function TripPlanner({ user, profile }) {
   const [documentCategory, setDocumentCategory] = useState('אחר')
   const [uploadingDocument, setUploadingDocument] = useState(false)
   const [analyzingDocumentId, setAnalyzingDocumentId] = useState('')
+  const [smartImportFiles, setSmartImportFiles] = useState({ flights: null, hotels: null, cars: null })
   const [bookingBusy, setBookingBusy] = useState(false)
 
   const [chatInput, setChatInput] = useState('')
@@ -822,6 +823,24 @@ function TripPlanner({ user, profile }) {
     }
   }
 
+  async function importBookingDocument(event, section, category) {
+    event.preventDefault()
+    const file = smartImportFiles[section]
+    if (!activeTrip || activeTripIsReadOnly || !file || bookingBusy) return
+    setBookingBusy(true)
+    setModuleError('')
+    try {
+      await uploadLinkedFile(file, category, 'documents', '')
+      setSmartImportFiles((current) => ({ ...current, [section]: null }))
+      const input = document.getElementById(`smart-import-${section}`)
+      if (input) input.value = ''
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו להעלות ולפענח את המסמך.')
+    } finally {
+      setBookingBusy(false)
+    }
+  }
+
   async function removeDocument(item) {
     if (!activeTrip || activeTripIsReadOnly) return
     try {
@@ -888,6 +907,26 @@ function TripPlanner({ user, profile }) {
   const currency = activeTrip?.budgetCurrency || 'ILS'
   const remaining = savedBudget - spent
   const packedCount = takeItems.filter((item) => item.done).length
+
+  function renderSmartImport(section, category, label) {
+    if (activeTripIsReadOnly) return null
+    const file = smartImportFiles[section]
+    return (
+      <section className="panel smart-import-panel">
+        <div className="smart-import-copy">
+          <span>✨</span>
+          <div><h3>הוספה חכמה ממסמך</h3><p>העלו PDF או תמונה של {label}. ה־AI יפענח, ימלא וישמור את כל הפרטים שמופיעים במסמך.</p></div>
+        </div>
+        <form onSubmit={(event) => importBookingDocument(event, section, category)}>
+          <label className="smart-file-picker">בחירת PDF או תמונה
+            <input id={`smart-import-${section}`} type="file" accept=".pdf,image/*" onChange={(event) => setSmartImportFiles((current) => ({ ...current, [section]: event.target.files?.[0] || null }))} required />
+          </label>
+          {file && <small>{file.name}</small>}
+          <button className="primary-button" type="submit" disabled={!file || bookingBusy}>{bookingBusy ? 'מעלה ומפענח…' : 'העלאה ופענוח'}</button>
+        </form>
+      </section>
+    )
+  }
 
   function renderItinerary() {
     if (!tripDays.length) {
@@ -1000,8 +1039,11 @@ function TripPlanner({ user, profile }) {
     return (
       <>
         <SectionHeader eyebrow="הזמנות" title="מלונות" subtitle="פרטי הלינה והאישורים, כמו באפליקציית Japan." />
+        {renderSmartImport('hotels', 'מלון', 'אישור המלון')}
         {!activeTripIsReadOnly && (
-          <section className="panel form-panel">
+          <details className="panel manual-entry">
+            <summary>הוספה או תיקון ידני</summary>
+            <section className="form-panel manual-form-panel">
             <form className="module-form" onSubmit={addHotel}>
               <label>שם המלון<input value={hotelForm.name} onChange={(e) => setHotelForm({ ...hotelForm, name: e.target.value })} required /></label>
               <label>עיר<input value={hotelForm.city} onChange={(e) => setHotelForm({ ...hotelForm, city: e.target.value })} /></label>
@@ -1012,14 +1054,17 @@ function TripPlanner({ user, profile }) {
               <label className="wide-field file-label">PDF / תמונה של ההזמנה<input id="hotel-attachment" type="file" accept=".pdf,image/*" onChange={(e) => setHotelFile(e.target.files?.[0] || null)} /></label>
               <button className="primary-button module-submit" type="submit" disabled={bookingBusy}>{bookingBusy ? 'שומרים…' : 'הוספת מלון +'}</button>
             </form>
-          </section>
+            </section>
+          </details>
         )}
         <div className="record-grid">
           {hotels.length ? hotels.map((hotel) => (
             <article className="record-card" key={hotel.id}>
               <div className="record-head"><div><span>🏨</span><h3>{hotel.name}</h3></div>{!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeModuleItem('hotels', hotel)}>🗑️</button>}</div>
               {hotel.city && <p>📍 {hotel.city}</p>}
+              {hotel.address && <p>🏨 כתובת: {hotel.address}</p>}
               {(hotel.checkIn || hotel.checkOut) && <p>📅 {[hotel.checkIn, hotel.checkOut].filter(Boolean).join(' → ')}</p>}
+              {hotel.room && <p>🛏️ חדר: {hotel.room}</p>}
               {hotel.bookingRef && <p>🎟️ הזמנה: <strong>{hotel.bookingRef}</strong></p>}
               {hotel.notes && <p className="record-notes">{hotel.notes}</p>}
               <AttachmentLink item={hotel} />
@@ -1034,8 +1079,11 @@ function TripPlanner({ user, profile }) {
     return (
       <>
         <SectionHeader eyebrow="תחבורה" title="השכרת רכב" subtitle="פרטי האיסוף, ההחזרה והאישור המצורף." />
+        {renderSmartImport('cars', 'השכרת רכב', 'אישור השכרת הרכב')}
         {!activeTripIsReadOnly && (
-          <section className="panel form-panel">
+          <details className="panel manual-entry">
+            <summary>הוספה או תיקון ידני</summary>
+            <section className="form-panel manual-form-panel">
             <form className="module-form" onSubmit={addCar}>
               <label>חברת השכרה<input value={carForm.company} onChange={(e) => setCarForm({ ...carForm, company: e.target.value })} required /></label>
               <label>מקום איסוף<input value={carForm.pickup} onChange={(e) => setCarForm({ ...carForm, pickup: e.target.value })} /></label>
@@ -1047,14 +1095,17 @@ function TripPlanner({ user, profile }) {
               <label className="wide-field file-label">PDF / תמונה של ההזמנה<input id="car-attachment" type="file" accept=".pdf,image/*" onChange={(e) => setCarFile(e.target.files?.[0] || null)} /></label>
               <button className="primary-button module-submit" type="submit" disabled={bookingBusy}>{bookingBusy ? 'שומרים…' : 'הוספת רכב +'}</button>
             </form>
-          </section>
+            </section>
+          </details>
         )}
         <div className="record-grid">
           {cars.length ? cars.map((car) => (
             <article className="record-card" key={car.id}>
               <div className="record-head"><div><span>🚗</span><h3>{car.company}</h3></div>{!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeModuleItem('cars', car)}>🗑️</button>}</div>
               {(car.pickup || car.dropoff) && <p>📍 {[car.pickup, car.dropoff].filter(Boolean).join(' → ')}</p>}
-              {(car.pickupDate || car.dropoffDate) && <p>📅 {[car.pickupDate, car.dropoffDate].filter(Boolean).join(' → ')}</p>}
+              {(car.pickupDate || car.pickupTime) && <p>🚗 איסוף: {[car.pickupDate, car.pickupTime].filter(Boolean).join(' · ')}</p>}
+              {(car.dropoffDate || car.dropoffTime) && <p>🏁 החזרה: {[car.dropoffDate, car.dropoffTime].filter(Boolean).join(' · ')}</p>}
+              {car.vehicle && <p>🚙 רכב: {car.vehicle}</p>}
               {car.bookingRef && <p>🎟️ הזמנה: <strong>{car.bookingRef}</strong></p>}
               {car.notes && <p className="record-notes">{car.notes}</p>}
               <AttachmentLink item={car} />
@@ -1069,8 +1120,11 @@ function TripPlanner({ user, profile }) {
     return (
       <>
         <SectionHeader eyebrow="הזמנות" title="טיסות" subtitle="כרטיסים, זמני טיסה ומספרי הזמנה במקום אחד." />
+        {renderSmartImport('flights', 'טיסה', 'כרטיס הטיסה או אישור ההזמנה')}
         {!activeTripIsReadOnly && (
-          <section className="panel form-panel">
+          <details className="panel manual-entry">
+            <summary>הוספה או תיקון ידני</summary>
+            <section className="form-panel manual-form-panel">
             <form className="module-form flight-form" onSubmit={addFlight}>
               <label>חברת תעופה<input value={flightForm.airline} onChange={(e) => setFlightForm({ ...flightForm, airline: e.target.value })} required /></label>
               <label>מספר טיסה<input value={flightForm.flightNumber} onChange={(e) => setFlightForm({ ...flightForm, flightNumber: e.target.value })} placeholder="EY 593" /></label>
@@ -1085,7 +1139,8 @@ function TripPlanner({ user, profile }) {
               <label className="wide-field file-label">PDF / תמונה של הכרטיס<input id="flight-attachment" type="file" accept=".pdf,image/*" onChange={(e) => setFlightFile(e.target.files?.[0] || null)} /></label>
               <button className="primary-button module-submit" type="submit" disabled={bookingBusy}>{bookingBusy ? 'שומרים…' : 'הוספת טיסה +'}</button>
             </form>
-          </section>
+            </section>
+          </details>
         )}
         <div className="record-grid">
           {flights.length ? flights.map((flight) => (
@@ -1094,6 +1149,8 @@ function TripPlanner({ user, profile }) {
               {(flight.from || flight.to) && <p className="flight-route"><strong>{flight.from || '—'}</strong> → <strong>{flight.to || '—'}</strong></p>}
               {(flight.departureDate || flight.departureTime) && <p>🛫 יציאה: {[flight.departureDate, flight.departureTime].filter(Boolean).join(' · ')}</p>}
               {(flight.arrivalDate || flight.arrivalTime) && <p>🛬 הגעה: {[flight.arrivalDate, flight.arrivalTime].filter(Boolean).join(' · ')}</p>}
+              {flight.terminal && <p>🏢 טרמינל: {flight.terminal}</p>}
+              {flight.seat && <p>💺 מושב: {flight.seat}</p>}
               {flight.bookingRef && <p>🎟️ הזמנה: <strong>{flight.bookingRef}</strong></p>}
               {flight.notes && <p className="record-notes">{flight.notes}</p>}
               <AttachmentLink item={flight} />
@@ -1163,7 +1220,16 @@ function TripPlanner({ user, profile }) {
                 {!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeDocument(item)}>🗑️</button>}
               </div>
               <p>{item.category || 'אחר'} · {formatBytes(item.size)}</p>
-              {item.status && <p className="document-status">מצב ניתוח: {item.status === 'processed' ? 'הושלם' : item.status === 'processing' ? 'בעיבוד…' : item.status === 'failed' ? 'נכשל' : item.status}</p>}
+              {item.processingStatus && <p className={`document-status ${item.processingStatus}`}>מצב פענוח: {item.processingStatus === 'done' ? 'הושלם' : item.processingStatus === 'processing' ? 'בעיבוד…' : item.processingStatus === 'error' ? 'נכשל' : 'ממתין'}</p>}
+              {item.extractionSummary && <p className="document-summary">{item.extractionSummary}</p>}
+              {item.extractedCounts && <p className="document-results">נמצאו: {[
+                item.extractedCounts.flights ? `${item.extractedCounts.flights} טיסות` : '',
+                item.extractedCounts.hotels ? `${item.extractedCounts.hotels} מלונות` : '',
+                item.extractedCounts.cars ? `${item.extractedCounts.cars} השכרות רכב` : '',
+                item.extractedCounts.tickets ? `${item.extractedCounts.tickets} כרטיסים` : '',
+                item.extractedCounts.expenses ? `${item.extractedCounts.expenses} הוצאות` : ''
+              ].filter(Boolean).join(' · ') || 'לא נמצאו פרטי הזמנה'}</p>}
+              {item.processingError && <p className="document-error">שגיאת פענוח: {item.processingError}</p>}
               {item.linkedCollection && item.linkedCollection !== 'documents' && <span className="linked-badge">מחובר ל־{item.linkedCollection}</span>}
               {item.downloadURL && <a className="attachment-link" href={item.downloadURL} target="_blank" rel="noreferrer">פתיחת המסמך</a>}
               {!activeTripIsReadOnly && (

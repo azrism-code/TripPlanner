@@ -203,7 +203,7 @@ async function extractTravelDocument(documentData, trip) {
     : { type: 'input_file', file_url: documentData.downloadURL, filename: documentData.name || 'booking.pdf' }
 
   const response = await client.responses.create({
-    model: process.env.OPENAI_IMPORT_MODEL || 'gpt-5.6-terra',
+    model: process.env.OPENAI_IMPORT_MODEL || 'gpt-5.4-mini',
     instructions: `You extract travel booking facts from uploaded tickets and confirmations for a travel-planning app. The uploaded document is the source of truth. Never invent missing values. Use empty strings or empty arrays when a fact is not present. Dates must be YYYY-MM-DD and times HH:MM when clearly available. Preserve airport names/codes, hotel names, confirmation numbers and monetary amounts exactly as shown. If one booking contains multiple flight segments, return each segment in flights. Costs must contain each actual charged/total amount only once, not once per segment. The trip currently runs from ${trip.startDate || 'unknown'} to ${trip.endDate || 'unknown'} and destination is ${trip.destination || 'unknown'}.`,
     input: [{
       role: 'user',
