@@ -129,3 +129,8 @@ jobs:
             console.log(`Firestore rules released: ${patched.name}`)
           }
           NODE
+
+      - name: Deploy Storage Rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: node scripts/deploy-storage-rules.mjs
