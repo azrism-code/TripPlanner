@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.0'
+const APP_VERSION = 'v0.6.1'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -285,6 +285,7 @@ function TripPlanner({ user, profile }) {
   const [uploadingDocument, setUploadingDocument] = useState(false)
   const [analyzingDocumentId, setAnalyzingDocumentId] = useState('')
   const [smartImportFiles, setSmartImportFiles] = useState({ flights: null, hotels: null, cars: null })
+  const [smartImportStatus, setSmartImportStatus] = useState({})
   const [bookingBusy, setBookingBusy] = useState(false)
 
   const [chatInput, setChatInput] = useState('')
@@ -823,18 +824,19 @@ function TripPlanner({ user, profile }) {
     }
   }
 
-  async function importBookingDocument(event, section, category) {
-    event.preventDefault()
-    const file = smartImportFiles[section]
+  async function importBookingDocument(file, section, category) {
     if (!activeTrip || activeTripIsReadOnly || !file || bookingBusy) return
     setBookingBusy(true)
     setModuleError('')
+    setSmartImportStatus((current) => ({ ...current, [section]: 'מעלה את הקובץ…' }))
     try {
       await uploadLinkedFile(file, category, 'documents', '')
       setSmartImportFiles((current) => ({ ...current, [section]: null }))
+      setSmartImportStatus((current) => ({ ...current, [section]: 'הקובץ הועלה ונשלח לפענוח. הפרטים יופיעו כאן אוטומטית בסיום.' }))
       const input = document.getElementById(`smart-import-${section}`)
       if (input) input.value = ''
     } catch (err) {
+      setSmartImportStatus((current) => ({ ...current, [section]: '' }))
       setModuleError(err?.message || 'לא הצלחנו להעלות ולפענח את המסמך.')
     } finally {
       setBookingBusy(false)
@@ -917,13 +919,17 @@ function TripPlanner({ user, profile }) {
           <span>✨</span>
           <div><h3>הוספה חכמה ממסמך</h3><p>העלו PDF או תמונה של {label}. ה־AI יפענח, ימלא וישמור את כל הפרטים שמופיעים במסמך.</p></div>
         </div>
-        <form onSubmit={(event) => importBookingDocument(event, section, category)}>
-          <label className="smart-file-picker">בחירת PDF או תמונה
-            <input id={`smart-import-${section}`} type="file" accept=".pdf,image/*" onChange={(event) => setSmartImportFiles((current) => ({ ...current, [section]: event.target.files?.[0] || null }))} required />
+        <div className="smart-import-actions">
+          <label className={`smart-file-picker ${bookingBusy ? 'busy' : ''}`}>{bookingBusy ? 'מעלה ומפענח…' : 'בחירת PDF או תמונה'}
+            <input id={`smart-import-${section}`} type="file" accept=".pdf,image/*" disabled={bookingBusy} onChange={(event) => {
+              const selectedFile = event.target.files?.[0] || null
+              setSmartImportFiles((current) => ({ ...current, [section]: selectedFile }))
+              if (selectedFile) importBookingDocument(selectedFile, section, category)
+            }} />
           </label>
           {file && <small>{file.name}</small>}
-          <button className="primary-button" type="submit" disabled={!file || bookingBusy}>{bookingBusy ? 'מעלה ומפענח…' : 'העלאה ופענוח'}</button>
-        </form>
+          {smartImportStatus[section] && <div className="smart-import-status" role="status">{smartImportStatus[section]}</div>}
+        </div>
       </section>
     )
   }

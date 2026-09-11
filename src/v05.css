@@ -259,7 +259,7 @@
 .smart-import-copy > span { font-size: 1.8rem; }
 .smart-import-copy h3 { margin: 0 0 5px; }
 .smart-import-copy p { margin: 0; color: var(--muted); line-height: 1.5; }
-.smart-import-panel form { display: grid; gap: 10px; }
+.smart-import-actions { display: grid; gap: 10px; }
 .smart-file-picker {
   display: grid;
   place-items: center;
@@ -273,7 +273,16 @@
   cursor: pointer;
 }
 .smart-file-picker input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
+.smart-file-picker.busy { cursor: wait; opacity: 0.7; }
 .smart-import-panel small { overflow-wrap: anywhere; color: var(--muted); }
+.smart-import-status {
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-weight: 750;
+  line-height: 1.45;
+}
 .manual-entry { margin-bottom: 18px; }
 .manual-entry > summary { cursor: pointer; font-weight: 800; color: #475569; }
 .manual-form-panel { padding: 18px 0 0; box-shadow: none; border: 0; }
