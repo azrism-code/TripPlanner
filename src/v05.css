@@ -264,3 +264,28 @@
   .flight-form { grid-template-columns: 1fr; }
   .route-space { padding-top: 16px; }
 }
+
+
+.document-status {
+  margin: 0.35rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.reanalyze-button {
+  min-height: 44px;
+  margin-top: 0.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #3730a3;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reanalyze-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

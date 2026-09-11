@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.5.0'
+const APP_VERSION = 'v0.5.1'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -42,7 +42,8 @@ const MODULE_COLLECTIONS = [
 ]
 const CURRENCIES = ['ILS', 'USD', 'EUR', 'JPY', 'GBP']
 const DOCUMENT_CATEGORIES = ['טיסה', 'מלון', 'כרטיס / אטרקציה', 'השכרת רכב', 'תוכנית / מסלול', 'ביטוח', 'אחר']
-const AI_ENDPOINT = import.meta.env.VITE_TRIP_AI_ENDPOINT || ''
+const AI_ENDPOINT = import.meta.env.VITE_TRIP_AI_ENDPOINT || 'https://tripchat-jshmqs3okq-ew.a.run.app'
+const DOCUMENT_ANALYSIS_ENDPOINT = import.meta.env.VITE_DOCUMENT_ANALYSIS_ENDPOINT || 'https://analyzedocument-jshmqs3okq-ew.a.run.app'
 
 function normalizeEmail(value) {
   return (value || '').trim().toLowerCase()
@@ -282,6 +283,7 @@ function TripPlanner({ user, profile }) {
   const [documentFile, setDocumentFile] = useState(null)
   const [documentCategory, setDocumentCategory] = useState('אחר')
   const [uploadingDocument, setUploadingDocument] = useState(false)
+  const [analyzingDocumentId, setAnalyzingDocumentId] = useState('')
   const [bookingBusy, setBookingBusy] = useState(false)
 
   const [chatInput, setChatInput] = useState('')
@@ -830,6 +832,26 @@ function TripPlanner({ user, profile }) {
     }
   }
 
+  async function analyzeDocumentAgain(item) {
+    if (!activeTrip || activeTripIsReadOnly || analyzingDocumentId) return
+    setAnalyzingDocumentId(item.id)
+    setModuleError('')
+    try {
+      const token = await user.getIdToken()
+      const response = await fetch(DOCUMENT_ANALYSIS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tripId: activeTrip.id, documentId: item.id })
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body?.error || 'לא הצלחנו לנתח את המסמך מחדש.')
+    } catch (err) {
+      setModuleError(err?.message || 'לא הצלחנו לנתח את המסמך מחדש.')
+    } finally {
+      setAnalyzingDocumentId('')
+    }
+  }
+
   async function sendChat(event) {
     event.preventDefault()
     if (!activeTrip || activeTripIsReadOnly || !chatInput.trim() || chatBusy) return
@@ -1141,8 +1163,14 @@ function TripPlanner({ user, profile }) {
                 {!activeTripIsReadOnly && <button className="icon-danger" type="button" onClick={() => removeDocument(item)}>🗑️</button>}
               </div>
               <p>{item.category || 'אחר'} · {formatBytes(item.size)}</p>
+              {item.status && <p className="document-status">מצב ניתוח: {item.status === 'processed' ? 'הושלם' : item.status === 'processing' ? 'בעיבוד…' : item.status === 'failed' ? 'נכשל' : item.status}</p>}
               {item.linkedCollection && item.linkedCollection !== 'documents' && <span className="linked-badge">מחובר ל־{item.linkedCollection}</span>}
               {item.downloadURL && <a className="attachment-link" href={item.downloadURL} target="_blank" rel="noreferrer">פתיחת המסמך</a>}
+              {!activeTripIsReadOnly && (
+                <button className="reanalyze-button" type="button" onClick={() => analyzeDocumentAgain(item)} disabled={Boolean(analyzingDocumentId)}>
+                  {analyzingDocumentId === item.id ? 'מנתח מחדש…' : '✨ ניתוח מחדש'}
+                </button>
+              )}
             </article>
           )) : <div className="empty-state record-empty"><div className="empty-icon">📎</div><h3>אין עדיין מסמכים</h3></div>}
         </div>
