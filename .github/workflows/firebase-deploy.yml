@@ -33,7 +33,7 @@ jobs:
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
 
-      - name: Deploy Firebase Hosting
+      - name: Deploy Firebase Hosting and Firestore Rules
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
-        run: npx --yes firebase-tools@latest deploy --only hosting --project tripplanner-94835 --non-interactive
+        run: npx --yes firebase-tools@latest deploy --only hosting,firestore:rules --project tripplanner-94835 --non-interactive
