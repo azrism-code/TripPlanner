@@ -5,6 +5,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager
 } from 'firebase/firestore'
+import { getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAShWpFIMY8SCKlb9f_YJJLa2jiO9SZz4g',
@@ -18,6 +19,7 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const googleProvider = new GoogleAuthProvider()
+export const storage = getStorage(app)
 
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
