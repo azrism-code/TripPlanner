@@ -11,6 +11,26 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isTripOwner(tripData) {
+      return signedIn() && tripData.ownerId == request.auth.uid;
+    }
+
+    function isTripViewer(tripData) {
+      return signedIn()
+        && request.auth.token.email != null
+        && ('sharedWithEmails' in tripData)
+        && tripData.sharedWithEmails is list
+        && request.auth.token.email.lower() in tripData.sharedWithEmails;
+    }
+
+    function canReadTrip(tripData) {
+      return isAdmin() || isTripOwner(tripData) || isTripViewer(tripData);
+    }
+
+    function tripData(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)).data;
+    }
+
     match /users/{userId} {
       allow create: if signedIn()
         && request.auth.uid == userId
@@ -35,23 +55,27 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
-      allow read, delete: if signedIn()
-        && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow read: if signedIn() && canReadTrip(resource.data);
+
+      allow delete: if signedIn()
+        && (isAdmin() || isTripOwner(resource.data));
 
       allow update: if signedIn()
         && (
           isAdmin()
           || (
-            resource.data.ownerId == request.auth.uid
+            isTripOwner(resource.data)
             && request.resource.data.ownerId == resource.data.ownerId
           )
         );
 
       match /{document=**} {
-        allow read, write: if signedIn()
+        allow read: if signedIn() && canReadTrip(tripData(tripId));
+
+        allow write: if signedIn()
           && (
-            get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid
-            || isAdmin()
+            isAdmin()
+            || tripData(tripId).ownerId == request.auth.uid
           );
       }
     }
