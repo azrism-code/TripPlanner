@@ -24,7 +24,8 @@ service firebase.storage {
 
     match /trips/{tripId}/documents/{fileName} {
       allow read: if isOwner(tripId) || isViewer(tripId);
-      allow create, update: if true;
+      allow create, update: if signedIn()
+        && request.resource.size < 25 * 1024 * 1024;
       allow delete: if signedIn()
         && (isOwner(tripId) || fileName.matches('^' + request.auth.uid + '-.*'));
     }
