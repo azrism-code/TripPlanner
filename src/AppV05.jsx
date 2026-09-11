@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.1'
+const APP_VERSION = 'v0.6.2'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -644,10 +644,13 @@ function TripPlanner({ user, profile }) {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${name}`
     const path = `trips/${activeTrip.id}/documents/${unique}`
     const objectRef = storageRef(storage, path)
-    await uploadBytes(objectRef, file, {
-      contentType: file.type || 'application/octet-stream',
-      customMetadata: { tripId: activeTrip.id, uploadedBy: user.uid, linkedCollection, linkedId }
-    })
+    await Promise.race([
+      uploadBytes(objectRef, file, {
+        contentType: file.type || 'application/octet-stream',
+        customMetadata: { tripId: activeTrip.id, uploadedBy: user.uid, linkedCollection, linkedId }
+      }),
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error('העלאת הקובץ לא הסתיימה. יש לוודא ש־Firebase Storage הופעל בפרויקט.')), 20000))
+    ])
     const downloadURL = await getDownloadURL(objectRef)
     const documentRef = doc(collection(db, 'trips', activeTrip.id, 'documents'))
     await setDoc(documentRef, {
@@ -1280,6 +1283,7 @@ function TripPlanner({ user, profile }) {
           <button className="menu-button" type="button" aria-label="פתיחת תפריט" onClick={() => setMenuOpen(true)}>☰</button>
           <div>
             <div className="app-title">TripPlanner <small>{APP_VERSION}</small></div>
+            {activeTrip && <div className="active-trip-title">{activeTrip.title}</div>}
             <div className={`connection-status ${online ? 'online' : 'offline'}`}>{online ? 'מחובר' : 'לא מחובר — השינויים יסונכרנו בהמשך'}</div>
           </div>
         </div>

@@ -143,6 +143,17 @@ input:focus, textarea:focus, select:focus {
 
 .topbar-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .app-title { font-weight: 900; font-size: 1.08rem; letter-spacing: -.03em; white-space: nowrap; }
+.active-trip-title {
+  max-width: min(52vw, 420px);
+  margin-top: 1px;
+  overflow: hidden;
+  color: #334155;
+  font-size: .82rem;
+  font-weight: 850;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .connection-status { margin-top: 2px; font-size: .68rem; font-weight: 750; }
 .connection-status.online { color: #15803d; }
 .connection-status.offline { color: #b45309; }
