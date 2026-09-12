@@ -7,17 +7,13 @@ const db = getFirestore()
 
 const clean = (value) => typeof value === 'string' ? value.trim() : value
 
-function firstMatchingFlight(flights, documentId) {
-  return flights.find((flight) =>
-    flight.sourceDocumentId === documentId ||
-    flight.documentId === documentId ||
-    (Array.isArray(flight.sourceDocumentIds) && flight.sourceDocumentIds.includes(documentId)) ||
-    (Array.isArray(flight.attachments) && flight.attachments.some((attachment) => attachment?.documentId === documentId))
-  )
-}
-
 function firstMatching(records, documentId) {
-  return records.find((record) => record.sourceDocumentId === documentId || record.documentId === documentId)
+  return records.find((record) =>
+    record.sourceDocumentId === documentId ||
+    record.documentId === documentId ||
+    (Array.isArray(record.sourceDocumentIds) && record.sourceDocumentIds.includes(documentId)) ||
+    (Array.isArray(record.attachments) && record.attachments.some((attachment) => attachment?.documentId === documentId))
+  )
 }
 
 function metadataFor(type, record) {
@@ -49,6 +45,35 @@ function metadataFor(type, record) {
       mapQuery: clean(record.pickup || '')
     }
   }
+  if (type === 'trains') {
+    return {
+      category: 'רכבת', recognizedType: 'train', recognizedTypeLabel: 'רכבת', recognizedTypeIcon: '🚆',
+      summaryTitle: [record.operator, record.trainNumber].filter(Boolean).join(' · ') || 'רכבת',
+      summaryCity: [record.from, record.to].filter(Boolean).join(' → '),
+      summaryLocation: [record.from, record.to].filter(Boolean).join(' → '),
+      summaryStartDate: clean(record.departureDate || ''), summaryEndDate: clean(record.arrivalDate || record.departureDate || ''),
+      mapQuery: clean(record.from || '')
+    }
+  }
+  if (type === 'transports') {
+    return {
+      category: 'תחבורה', recognizedType: 'transport', recognizedTypeLabel: clean(record.type || 'תחבורה'), recognizedTypeIcon: '🚌',
+      summaryTitle: [record.provider, record.serviceNumber].filter(Boolean).join(' · ') || clean(record.type || 'תחבורה'),
+      summaryCity: [record.from, record.to].filter(Boolean).join(' → '),
+      summaryLocation: [record.from, record.to].filter(Boolean).join(' → '),
+      summaryStartDate: clean(record.departureDate || ''), summaryEndDate: clean(record.arrivalDate || record.departureDate || ''),
+      mapQuery: clean(record.from || '')
+    }
+  }
+  if (type === 'bookings') {
+    return {
+      category: clean(record.type || 'הזמנה'), recognizedType: 'booking', recognizedTypeLabel: clean(record.type || 'הזמנה'), recognizedTypeIcon: '🧾',
+      summaryTitle: clean(record.title || record.provider || 'הזמנה'), summaryCity: clean(record.city || ''),
+      summaryLocation: clean(record.location || record.city || ''),
+      summaryStartDate: clean(record.startDate || ''), summaryEndDate: clean(record.endDate || record.startDate || ''),
+      mapQuery: clean(record.location || record.city || '')
+    }
+  }
   return {
     category: 'כרטיס / אטרקציה', recognizedType: 'ticket', recognizedTypeLabel: 'כרטיס / אטרקציה', recognizedTypeIcon: '🎟️',
     summaryTitle: clean(record.title || 'כרטיס / אטרקציה'), summaryCity: clean(record.city || ''),
@@ -75,27 +100,18 @@ export const enrichImportedDocumentV1 = onDocumentWritten({
 
   const { tripId, documentId } = event.params
   const tripRef = db.collection('trips').doc(tripId)
-  const [flightSnapshot, hotelSnapshot, carSnapshot, ticketSnapshot] = await Promise.all([
-    tripRef.collection('flights').limit(100).get(),
-    tripRef.collection('hotels').limit(100).get(),
-    tripRef.collection('cars').limit(100).get(),
-    tripRef.collection('tickets').limit(100).get()
-  ])
-
-  const flights = flightSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-  const hotels = hotelSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-  const cars = carSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-  const tickets = ticketSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  const collectionNames = ['flights', 'hotels', 'cars', 'trains', 'transports', 'tickets', 'bookings']
+  const snapshots = await Promise.all(collectionNames.map((name) => tripRef.collection(name).limit(100).get()))
+  const recordsByType = new Map(collectionNames.map((name, index) => [
+    name,
+    snapshots[index].docs.map((document) => ({ id: document.id, ...document.data() }))
+  ]))
 
   const matches = []
-  const flight = firstMatchingFlight(flights, documentId)
-  const hotel = firstMatching(hotels, documentId)
-  const car = firstMatching(cars, documentId)
-  const ticket = firstMatching(tickets, documentId)
-  if (flight) matches.push({ type: 'flights', record: flight })
-  if (hotel) matches.push({ type: 'hotels', record: hotel })
-  if (car) matches.push({ type: 'cars', record: car })
-  if (ticket) matches.push({ type: 'tickets', record: ticket })
+  for (const type of collectionNames) {
+    const record = firstMatching(recordsByType.get(type), documentId)
+    if (record) matches.push({ type, record })
+  }
 
   let desired
   if (matches.length === 1) {
