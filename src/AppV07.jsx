@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import LegacyApp from './AppV05.jsx'
 
-const APP_VERSION = 'v0.6.7'
+const APP_VERSION = 'v0.7.0'
 
 function openFlightsSection() {
   const buttons = [...document.querySelectorAll('aside.side-menu button, nav button, .bottom-nav button')]
@@ -22,7 +22,8 @@ function compactItineraryFlights() {
   const seenFlights = new Set()
   document.querySelectorAll('.timeline-item').forEach((row) => {
     const typeNode = row.querySelector('.timeline-type')
-    const type = (typeNode?.textContent || '').trim().toLowerCase()
+    const visibleType = (typeNode?.textContent || '').trim().toLowerCase()
+    const type = visibleType === 'טיסה' ? 'flight' : visibleType === 'שדה תעופה' ? 'airport-arrival' : visibleType
 
     if (type === 'flight-arrival') {
       row.classList.add('tp-hide-legacy-flight-arrival')
