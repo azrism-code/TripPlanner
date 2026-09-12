@@ -7,7 +7,7 @@ if (!getApps().length) initializeApp()
 const db = getFirestore()
 const RULE_VERSION = 'flight-rules-v3'
 
-export const normalizeFlightsOnTripOpen = onDocumentWritten({
+export const applyFlightRulesOnTripOpenV3 = onDocumentWritten({
   document: 'users/{uid}',
   region: 'europe-west1',
   timeoutSeconds: 180,
