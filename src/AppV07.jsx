@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import LegacyApp from './AppV05.jsx'
 
-const APP_VERSION = 'v0.6.6'
+const APP_VERSION = 'v0.6.7'
 
 function openFlightsSection() {
   const buttons = [...document.querySelectorAll('aside.side-menu button, nav button, .bottom-nav button')]
@@ -16,7 +16,7 @@ function flightNumbersFrom(text = '') {
 
 function compactItineraryFlights() {
   document.querySelectorAll('.app-title small, .auth-card h1 small').forEach((node) => {
-    node.textContent = APP_VERSION
+    if (node.textContent !== APP_VERSION) node.textContent = APP_VERSION
   })
 
   const seenFlights = new Set()
@@ -44,7 +44,9 @@ function compactItineraryFlights() {
     }
     seenFlights.add(flightIdentity)
 
-    if (title && numbers.length) title.textContent = `✈️ ${numbers.join(' / ')}`
+    const compactTitle = numbers.length ? `✈️ ${numbers.join(' / ')}` : ''
+    if (title && compactTitle && title.textContent !== compactTitle) title.textContent = compactTitle
+
     const card = row.querySelector('.timeline-card')
     if (card && !card.querySelector('.tp-flight-details-link')) {
       const button = document.createElement('button')
@@ -77,10 +79,27 @@ function enhance() {
 
 export default function AppV07() {
   useEffect(() => {
-    const observer = new MutationObserver(enhance)
-    observer.observe(document.body, { childList: true, subtree: true })
+    let frameId = 0
+    let stopped = false
+
+    const observer = new MutationObserver(() => {
+      if (frameId || stopped) return
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0
+        observer.disconnect()
+        enhance()
+        if (!stopped) observer.observe(document.body, { childList: true, subtree: true })
+      })
+    })
+
     enhance()
-    return () => observer.disconnect()
+    observer.observe(document.body, { childList: true, subtree: true })
+
+    return () => {
+      stopped = true
+      observer.disconnect()
+      if (frameId) window.cancelAnimationFrame(frameId)
+    }
   }, [])
 
   return <LegacyApp />
