@@ -1,0 +1,4 @@
+.tp-hide-legacy-flight-arrival { display: none; }
+.timeline-item.tp-flight-compact .timeline-type { display: none; }
+.timeline-item.tp-flight-compact .record-notes { display: none; }
+.tp-flight-details-link { border: 0; background: transparent; font-weight: 700; cursor: pointer; text-decoration: underline; }
