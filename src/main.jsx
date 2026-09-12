@@ -7,6 +7,7 @@ import './v04.css'
 import './v05.css'
 import './v07.css'
 import './v08.css'
+import './v09.css'
 
 registerSW({ immediate: true })
 
