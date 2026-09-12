@@ -1,5 +1,21 @@
-.tp-hide-trip-ai-entry {
+.tp-hide-trip-ai-entry,
+.ai-card,
+.ai-day-button {
   display: none !important;
+}
+
+/* Keep the header layout physically stable in RTL: trip identity on the right,
+   avatar pinned left, Trip AI exactly centered in the viewport. */
+.topbar {
+  justify-content: flex-start !important;
+}
+
+.topbar > .account-button {
+  position: absolute;
+  left: max(16px, calc((100vw - 1040px) / 2));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
 }
 
 .tp-topbar-ai-slot {
@@ -8,6 +24,18 @@
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
+}
+
+.topbar-brand {
+  max-width: calc(50vw - 86px);
+}
+
+.topbar-brand > div {
+  min-width: 0;
+}
+
+.active-trip-title {
+  max-width: 100%;
 }
 
 .tp-topbar-ai-button {
@@ -36,6 +64,14 @@
 }
 
 @media (max-width: 560px) {
+  .topbar > .account-button {
+    left: 14px;
+  }
+
+  .topbar-brand {
+    max-width: calc(50vw - 66px);
+  }
+
   .tp-topbar-ai-button {
     min-height: 38px;
     padding: 0 11px;
