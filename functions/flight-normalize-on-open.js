@@ -1,11 +1,11 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import { initializeApp, getApps } from 'firebase-admin/app'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
-import { normalizeTripFlights } from './flight-rules-v2.js'
+import { normalizeTripFlights } from './flight-rules-v3.js'
 
 if (!getApps().length) initializeApp()
 const db = getFirestore()
-const RULE_VERSION = 'flight-rules-v2'
+const RULE_VERSION = 'flight-rules-v3'
 
 export const normalizeFlightsOnTripOpen = onDocumentWritten({
   document: 'users/{uid}',
