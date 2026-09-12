@@ -1,0 +1,55 @@
+.tp-hide-trip-ai-entry {
+  display: none !important;
+}
+
+.tp-topbar-ai-slot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.tp-topbar-ai-button {
+  min-height: 42px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  background: #f0fdfa;
+  color: #115e59;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 850;
+  white-space: nowrap;
+  box-shadow: 0 5px 16px rgba(15, 118, 110, .10);
+}
+
+.tp-topbar-ai-button:hover,
+.tp-topbar-ai-button.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+@media (max-width: 560px) {
+  .tp-topbar-ai-button {
+    min-height: 38px;
+    padding: 0 11px;
+    gap: 5px;
+    font-size: .78rem;
+  }
+}
+
+@media (max-width: 390px) {
+  .tp-topbar-ai-button strong {
+    font-size: 0;
+  }
+  .tp-topbar-ai-button strong::after {
+    content: 'AI';
+    font-size: .78rem;
+  }
+}
