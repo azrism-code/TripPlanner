@@ -533,7 +533,7 @@ function enhanceLegacySummaryCards() {
 
 function setVisibleVersion() {
   document.querySelectorAll('.app-title small, .auth-card h1 small').forEach((node) => {
-    if (node.textContent !== 'v0.7.0') node.textContent = 'v0.7.0'
+    if (node.textContent !== 'v0.8.0') node.textContent = 'v0.8.0'
   })
 }
 
