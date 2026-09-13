@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import LegacyApp from './AppV05.jsx'
 
-const APP_VERSION = 'v0.8.0'
+const APP_VERSION = 'v0.8.1'
 
 function openFlightsSection() {
   const buttons = [...document.querySelectorAll('aside.side-menu button, nav button, .bottom-nav button')]
