@@ -46,7 +46,7 @@ async function copyText(text) {
 }
 
 function statusLabel(status) {
-  if (status === 'accepted') return 'התקבל'
+  if (status === 'accepted') return 'פעיל'
   if (status === 'revoked') return 'בוטל'
   return 'ממתין'
 }
@@ -120,14 +120,19 @@ function SystemAdminLayer() {
     setCreating(true)
     setError('')
     setNotice('')
+    setLatestInvite(null)
     try {
       const result = await callAdminApi(user, { action: 'createFamilyAdminInvite', ...form })
-      setLatestInvite(result.invite)
-      setNotice(result.reused ? 'כבר קיימת הזמנה פעילה למשתמש הזה. הצגתי את הקישור הקיים.' : 'ההזמנה נוצרה. אפשר להעתיק או לשתף אותה עכשיו.')
+      if (result.directAssigned) {
+        setNotice('המשתמש כבר קיים ב-TripPlanner ולכן צורף מיד כמנהל המשפחה. אין צורך באישור או בקישור הזמנה.')
+      } else {
+        setLatestInvite(result.invite)
+        setNotice(result.reused ? 'כבר קיימת הזמנה פעילה למשתמש הזה. הצגתי את הקישור הקיים.' : 'המשתמש עדיין לא קיים במערכת. נוצר קישור הזמנה שאפשר להעתיק או לשתף.')
+      }
       setForm((current) => ({ ...current, displayName: '', email: '' }))
       await loadOverview()
     } catch (err) {
-      setError(err?.message || 'יצירת ההזמנה נכשלה.')
+      setError(err?.message || 'הוספת מנהל המשפחה נכשלה.')
     } finally {
       setCreating(false)
     }
@@ -184,26 +189,26 @@ function SystemAdminLayer() {
               <div>
                 <p className="eyebrow">SYSTEM ADMIN</p>
                 <h2>ניהול משפחות</h2>
-                <p>כאן אתה מזמין מנהלי משפחות. הם מתחברים עם האימייל שהוגדר ומקבלים הרשאה אוטומטית דרך הקישור.</p>
+                <p>משתמש שכבר קיים ב-TripPlanner יצורף מיד כמנהל משפחה. רק משתמש חדש יקבל קישור הזמנה לאישור אחרי ההתחברות.</p>
               </div>
               <button className="modal-close" type="button" onClick={() => setOpen(false)}>✕</button>
             </header>
 
             <form className="tp-admin-form" onSubmit={createInvite}>
-              <h3>הזמן מנהל משפחה</h3>
+              <h3>הוסף מנהל משפחה</h3>
               <label>שם המשפחה / הקבוצה<input value={form.familyName} onChange={(e) => setForm({ ...form, familyName: e.target.value })} placeholder="לדוגמה: משפחת כהן" required /></label>
               <div className="tp-admin-form-grid">
                 <label>שם מנהל המשפחה<input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="אופציונלי" /></label>
                 <label>אימייל<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@example.com" required /></label>
               </div>
-              <button className="primary-button" type="submit" disabled={creating}>{creating ? 'יוצר הזמנה…' : 'יצירת מנהל משפחה והזמנה'}</button>
-              <small>לא נוצרת סיסמה. המשתמש ייכנס עם Google או אימייל משלו דרך הקישור.</small>
+              <button className="primary-button" type="submit" disabled={creating}>{creating ? 'מוסיף…' : 'הוסף מנהל משפחה'}</button>
+              <small>למשתמש קיים אין צורך באישור. אם המשתמש עדיין לא קיים, ייווצר קישור הזמנה לשיתוף.</small>
             </form>
 
             {error && <div className="error-box">{error}</div>}
             {notice && <div className="tp-admin-notice">{notice}</div>}
 
-            {latestInvite && (
+            {latestInvite && latestInvite.status === 'pending' && (
               <section className="tp-invite-result">
                 <strong>הקישור מוכן לשיתוף</strong>
                 <span>{latestInvite.familyName} · {latestInvite.email}</span>
@@ -218,10 +223,10 @@ function SystemAdminLayer() {
 
             <section className="tp-admin-list">
               <div className="tp-admin-list-head">
-                <div><h3>משפחות ומנהלים</h3><small>{overview.families?.length || 0} משפחות · {inviteRows.length} הזמנות</small></div>
+                <div><h3>משפחות ומנהלים</h3><small>{overview.families?.length || 0} משפחות · {inviteRows.length} מנהלים/הזמנות</small></div>
                 <button className="secondary-button" type="button" onClick={loadOverview} disabled={loading}>{loading ? 'טוען…' : 'רענון'}</button>
               </div>
-              {!loading && !inviteRows.length && <p className="muted">עדיין לא נוצרו הזמנות למנהלי משפחות.</p>}
+              {!loading && !inviteRows.length && <p className="muted">עדיין לא הוגדרו מנהלי משפחות.</p>}
               <div className="tp-invite-list">
                 {inviteRows.map((invite) => (
                   <article className="tp-invite-row" key={invite.id}>
@@ -230,7 +235,7 @@ function SystemAdminLayer() {
                       <p>{invite.displayName || 'מנהל משפחה'} · {invite.email}</p>
                     </div>
                     <div className="tp-invite-row-actions">
-                      {invite.status !== 'revoked' && <button type="button" onClick={() => copyInvite(invite)}>העתק קישור</button>}
+                      {invite.status === 'pending' && <button type="button" onClick={() => copyInvite(invite)}>העתק קישור</button>}
                       {invite.status === 'pending' && <button type="button" onClick={() => nativeShare(invite)}>שתף</button>}
                       {invite.status === 'pending' && <button className="danger" type="button" onClick={() => revoke(invite)}>בטל</button>}
                     </div>
