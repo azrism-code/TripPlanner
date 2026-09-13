@@ -29,7 +29,7 @@ import {
 } from 'firebase/storage'
 import { auth, db, googleProvider, storage } from './firebase.js'
 
-const APP_VERSION = 'v0.6.5'
+const APP_VERSION = 'v0.8.0'
 const MODULE_COLLECTIONS = [
   'takeItems',
   'hotels',
@@ -44,6 +44,7 @@ const CURRENCIES = ['ILS', 'USD', 'EUR', 'JPY', 'GBP']
 const DOCUMENT_CATEGORIES = ['טיסה', 'מלון', 'כרטיס / אטרקציה', 'השכרת רכב', 'תוכנית / מסלול', 'ביטוח', 'אחר']
 const AI_ENDPOINT = import.meta.env.VITE_TRIP_AI_ENDPOINT || 'https://tripchat-jshmqs3okq-ew.a.run.app'
 const DOCUMENT_ANALYSIS_ENDPOINT = import.meta.env.VITE_DOCUMENT_ANALYSIS_ENDPOINT || 'https://analyzedocument-jshmqs3okq-ew.a.run.app'
+const ATTRACTION_CATALOG_ENDPOINT = import.meta.env.VITE_ATTRACTION_CATALOG_ENDPOINT || 'https://europe-west1-tripplanner-94835.cloudfunctions.net/attractionCatalog'
 
 function normalizeEmail(value) {
   return (value || '').trim().toLowerCase()
@@ -263,6 +264,11 @@ function TripPlanner({ user, profile }) {
   const [documents, setDocuments] = useState([])
   const [chatMessages, setChatMessages] = useState([])
   const [itineraryDays, setItineraryDays] = useState([])
+  const [savedAttractions, setSavedAttractions] = useState([])
+  const [attractionCity, setAttractionCity] = useState('')
+  const [attractionResults, setAttractionResults] = useState([])
+  const [attractionLoading, setAttractionLoading] = useState(false)
+  const [attractionError, setAttractionError] = useState('')
 
   const [takeText, setTakeText] = useState('')
   const [hotelForm, setHotelForm] = useState({ name: '', city: '', checkIn: '', checkOut: '', bookingRef: '', notes: '' })
@@ -404,6 +410,7 @@ function TripPlanner({ user, profile }) {
       setDocuments([])
       setChatMessages([])
       setItineraryDays([])
+      setSavedAttractions([])
       return undefined
     }
 
@@ -422,7 +429,8 @@ function TripPlanner({ user, profile }) {
       subscribe('flights', setFlights, (a, b) => `${a.departureDate || ''}${a.departureTime || ''}`.localeCompare(`${b.departureDate || ''}${b.departureTime || ''}`), 'לא הצלחנו לטעון טיסות.'),
       subscribe('expenses', setExpenses, (a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt), 'לא הצלחנו לטעון הוצאות.'),
       subscribe('documents', setDocuments, (a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt), 'לא הצלחנו לטעון מסמכים.'),
-      subscribe('itineraryDays', setItineraryDays, (a, b) => (a.date || a.id).localeCompare(b.date || b.id), 'לא הצלחנו לטעון את המסלול.')
+      subscribe('itineraryDays', setItineraryDays, (a, b) => (a.date || a.id).localeCompare(b.date || b.id), 'לא הצלחנו לטעון את המסלול.'),
+      subscribe('savedAttractions', setSavedAttractions, (a, b) => (a.name || '').localeCompare(b.name || '', 'he'), 'לא הצלחנו לטעון את האטרקציות.')
     ]
 
     if (!activeTripIsReadOnly) {
@@ -467,6 +475,78 @@ function TripPlanner({ user, profile }) {
     setDeleteOpen(false)
     setModuleError('')
     rememberTrip(activeTrip.id)
+  }
+
+  async function searchAttractions(event) {
+    event?.preventDefault()
+    const city = attractionCity.trim() || activeTrip?.destination?.trim()
+    if (!city) {
+      setAttractionError('יש להזין עיר לחיפוש.')
+      return
+    }
+    setAttractionLoading(true)
+    setAttractionError('')
+    try {
+      const token = await user.getIdToken()
+      const response = await fetch(`${ATTRACTION_CATALOG_ENDPOINT}?city=${encodeURIComponent(city)}&limit=50`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error === 'city_not_found' ? 'העיר לא נמצאה.' : payload.message || 'החיפוש נכשל.')
+      setAttractionResults(payload.attractions || [])
+      setAttractionCity(city)
+    } catch (err) {
+      setAttractionError(err?.message || 'לא הצלחנו להביא אטרקציות לעיר הזאת.')
+    } finally {
+      setAttractionLoading(false)
+    }
+  }
+
+  async function toggleSavedAttraction(attraction) {
+    if (!activeTrip || activeTripIsReadOnly) return
+    const attractionRef = doc(db, 'trips', activeTrip.id, 'savedAttractions', attraction.id)
+    const alreadySaved = savedAttractions.some((item) => item.id === attraction.id)
+    try {
+      if (alreadySaved) await deleteDoc(attractionRef)
+      else await setDoc(attractionRef, { ...attraction, city: attractionCity.trim(), createdAt: serverTimestamp() })
+    } catch (err) {
+      setAttractionError(err?.message || 'לא הצלחנו לשמור את האטרקציה.')
+    }
+  }
+
+  function renderAttractions() {
+    const savedIds = new Set(savedAttractions.map((item) => item.id))
+    return (
+      <>
+        <SectionHeader eyebrow="גילוי מקומות" title="אטרקציות" subtitle="הזינו עיר וקבלו מקומות עם תיאור, תמונה, מיקום וזמן ביקור מומלץ." />
+        <section className="panel attraction-search-panel">
+          <form className="attraction-search-form" onSubmit={searchAttractions}>
+            <label>עיר<input value={attractionCity} onChange={(e) => setAttractionCity(e.target.value)} placeholder={activeTrip?.destination || 'לדוגמה: אוסקה'} /></label>
+            <button className="primary-button" type="submit" disabled={attractionLoading}>{attractionLoading ? 'מחפש ובונה קטלוג…' : 'חיפוש אטרקציות'}</button>
+          </form>
+          {attractionError && <div className="error-box">{attractionError}</div>}
+          <p className="attraction-source">מקורות: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> ו־<a href="https://he.wikipedia.org/" target="_blank" rel="noreferrer">Wikipedia</a>.</p>
+        </section>
+        {savedAttractions.length > 0 && <section className="panel saved-attractions-summary"><strong>נשמרו לטיול: {savedAttractions.length} אטרקציות</strong></section>}
+        {attractionResults.length > 0 && <div className="attraction-grid">
+          {attractionResults.map((item) => {
+            const saved = savedIds.has(item.id)
+            return <article className="attraction-card" key={item.id}>
+              {item.imageUrl ? <img src={item.imageUrl} alt={item.name} loading="lazy" /> : <div className="attraction-placeholder">📍</div>}
+              <div className="attraction-card-body">
+                <div className="attraction-card-title"><h3>{item.nameHe || item.name}</h3><span>{item.visitDurationMin} דק׳</span></div>
+                <p>{item.shortDesc}</p>
+                <div className="attraction-card-actions">
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lon}`} target="_blank" rel="noreferrer">מפה</a>
+                  {item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">מידע נוסף</a>}
+                  {!activeTripIsReadOnly && <button type="button" className={saved ? 'secondary-button' : 'primary-button'} onClick={() => toggleSavedAttraction(item)}>{saved ? '✓ נשמר' : '+ הוספה לטיול'}</button>}
+                </div>
+              </div>
+            </article>
+          })}
+        </div>}
+      </>
+    )
   }
 
   function openDay(day) {
@@ -1332,6 +1412,7 @@ function TripPlanner({ user, profile }) {
           <>
             <button className={screen === 'itinerary' ? 'active' : ''} type="button" onClick={() => openSection('itinerary')}>🗓️ מסלול הטיול<small>ימים, שעות ומקומות</small></button>
             <button className={screen === 'overview' ? 'active' : ''} type="button" onClick={() => openSection('overview')}>🧭 סקירת הטיול</button>
+            <button className={screen === 'attractions' ? 'active' : ''} type="button" onClick={() => openSection('attractions')}>📍 אטרקציות<small>חיפוש והוספה לפי עיר</small></button>
             <button className={screen === 'flights' ? 'active' : ''} type="button" onClick={() => openSection('flights')}>✈️ טיסות</button>
             <button className={screen === 'hotels' ? 'active' : ''} type="button" onClick={() => openSection('hotels')}>🏨 מלונות</button>
             <button className={screen === 'cars' ? 'active' : ''} type="button" onClick={() => openSection('cars')}>🚗 השכרת רכב</button>
@@ -1385,6 +1466,7 @@ function TripPlanner({ user, profile }) {
             {activeTripIsReadOnly && <div className="readonly-notice">הטיול שותף איתך לצפייה בלבד. אפשר לעבור בין הימים ולפתוח מסמכים, אך רק בעל הטיול יכול לשנות אותו.</div>}
             {screen === 'itinerary' && renderItinerary()}
             {screen === 'overview' && renderOverview()}
+            {screen === 'attractions' && renderAttractions()}
             {screen === 'flights' && renderFlights()}
             {screen === 'hotels' && renderHotels()}
             {screen === 'cars' && renderCars()}
