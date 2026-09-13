@@ -33,8 +33,85 @@ async function requireAdmin(uid) {
   if (!snap.exists || snap.data()?.role !== 'admin') throw Object.assign(new Error('System administrator permission required'), { status: 403 })
 }
 
+async function authUserByEmail(email) {
+  try {
+    return await adminAuth.getUserByEmail(email)
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return null
+    throw error
+  }
+}
+
+async function assignFamilyAdmin({ familyId, familyName, email, displayName, authRecord, inviteRef = null }) {
+  const familyRef = db.collection('families').doc(familyId)
+  const familySnap = await familyRef.get()
+  if (!familySnap.exists || familySnap.data()?.active === false) throw Object.assign(new Error('The family is no longer active'), { status: 410 })
+
+  const userRef = db.collection('users').doc(authRecord.uid)
+  const userSnap = await userRef.get()
+  const batch = db.batch()
+  const now = FieldValue.serverTimestamp()
+  const resolvedName = authRecord.displayName || displayName || userSnap.data()?.displayName || ''
+
+  batch.set(familyRef.collection('members').doc(authRecord.uid), {
+    uid: authRecord.uid,
+    email,
+    displayName: resolvedName,
+    role: 'familyAdmin',
+    joinedAt: now,
+    updatedAt: now
+  }, { merge: true })
+
+  const userPatch = {
+    email,
+    displayName: resolvedName,
+    familyIds: FieldValue.arrayUnion(familyId),
+    familyAdminOf: FieldValue.arrayUnion(familyId),
+    updatedAt: now
+  }
+  if (!userSnap.exists) {
+    userPatch.role = 'user'
+    userPatch.createdAt = now
+  }
+  batch.set(userRef, userPatch, { merge: true })
+  batch.set(familyRef, { managerEmails: FieldValue.arrayUnion(email), updatedAt: now }, { merge: true })
+
+  if (inviteRef) {
+    batch.set(inviteRef, {
+      status: 'accepted',
+      acceptedByUid: authRecord.uid,
+      acceptedAt: now,
+      autoAccepted: true,
+      updatedAt: now
+    }, { merge: true })
+  }
+
+  await batch.commit()
+  return { familyId, familyName: familySnap.data()?.name || familyName || '', uid: authRecord.uid, displayName: resolvedName }
+}
+
+async function reconcileExistingPendingInvites() {
+  const pendingSnap = await db.collection('familyInvites').where('status', '==', 'pending').limit(500).get()
+  await Promise.all(pendingSnap.docs.map(async (inviteDoc) => {
+    const invite = inviteDoc.data()
+    const email = emailKey(invite.email)
+    if (!email) return
+    const authRecord = await authUserByEmail(email)
+    if (!authRecord) return
+    await assignFamilyAdmin({
+      familyId: invite.familyId,
+      familyName: invite.familyName,
+      email,
+      displayName: invite.displayName,
+      authRecord,
+      inviteRef: inviteDoc.ref
+    })
+  }))
+}
+
 async function overview(decoded) {
   await requireAdmin(decoded.uid)
+  await reconcileExistingPendingInvites()
   const [familiesSnap, invitesSnap] = await Promise.all([
     db.collection('families').limit(200).get(),
     db.collection('familyInvites').limit(500).get()
@@ -74,11 +151,45 @@ async function createInvite(decoded, body) {
   const family = await getOrCreateFamily(body?.familyName, decoded.uid)
   const previous = await db.collection('familyInvites').where('email', '==', email).limit(50).get()
   const same = previous.docs.find((d) => d.data().familyId === family.id && ['pending', 'accepted'].includes(d.data().status))
-  if (same) return { reused: true, invite: { id: same.id, familyId: family.id, familyName: family.name, email, displayName: same.data().displayName || displayName, status: same.data().status, role: 'familyAdmin' } }
+  const authRecord = await authUserByEmail(email)
+
+  if (authRecord) {
+    let inviteRef = same?.ref || null
+    if (!inviteRef) {
+      inviteRef = db.collection('familyInvites').doc()
+      await inviteRef.set({
+        familyId: family.id,
+        familyName: family.name,
+        email,
+        displayName,
+        role: 'familyAdmin',
+        status: 'pending',
+        invitedBy: decoded.uid,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      })
+    }
+    const assigned = await assignFamilyAdmin({ familyId: family.id, familyName: family.name, email, displayName: same?.data()?.displayName || displayName, authRecord, inviteRef })
+    return {
+      reused: Boolean(same),
+      directAssigned: true,
+      invite: {
+        id: inviteRef.id,
+        familyId: family.id,
+        familyName: assigned.familyName,
+        email,
+        displayName: assigned.displayName,
+        status: 'accepted',
+        role: 'familyAdmin'
+      }
+    }
+  }
+
+  if (same) return { reused: true, directAssigned: false, invite: { id: same.id, familyId: family.id, familyName: family.name, email, displayName: same.data().displayName || displayName, status: same.data().status, role: 'familyAdmin' } }
 
   const ref = db.collection('familyInvites').doc()
   await ref.set({ familyId: family.id, familyName: family.name, email, displayName, role: 'familyAdmin', status: 'pending', invitedBy: decoded.uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() })
-  return { reused: false, invite: { id: ref.id, familyId: family.id, familyName: family.name, email, displayName, status: 'pending', role: 'familyAdmin' } }
+  return { reused: false, directAssigned: false, invite: { id: ref.id, familyId: family.id, familyName: family.name, email, displayName, status: 'pending', role: 'familyAdmin' } }
 }
 
 async function revokeInvite(decoded, body) {
@@ -111,13 +222,15 @@ async function acceptInvite(decoded, body) {
   const family = await familyRef.get()
   if (!family.exists || family.data()?.active === false) throw Object.assign(new Error('The family is no longer active'), { status: 410 })
 
-  const batch = db.batch()
-  batch.set(familyRef.collection('members').doc(decoded.uid), { uid: decoded.uid, email, displayName: decoded.name || invite.displayName || '', role: 'familyAdmin', joinedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
-  batch.set(db.collection('users').doc(decoded.uid), { familyIds: FieldValue.arrayUnion(invite.familyId), familyAdminOf: FieldValue.arrayUnion(invite.familyId), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
-  batch.set(familyRef, { managerEmails: FieldValue.arrayUnion(email), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
-  batch.set(ref, { status: 'accepted', acceptedByUid: decoded.uid, acceptedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
-  await batch.commit()
-  return { ok: true, familyId: invite.familyId, familyName: family.data()?.name || invite.familyName || '', role: 'familyAdmin' }
+  const assigned = await assignFamilyAdmin({
+    familyId: invite.familyId,
+    familyName: family.data()?.name || invite.familyName || '',
+    email,
+    displayName: decoded.name || invite.displayName || '',
+    authRecord: { uid: decoded.uid, displayName: decoded.name || '' },
+    inviteRef: ref
+  })
+  return { ok: true, familyId: invite.familyId, familyName: assigned.familyName, role: 'familyAdmin' }
 }
 
 export const familyAdminApi = onRequest({ region: 'europe-west1', timeoutSeconds: 60, memory: '256MiB' }, async (req, res) => {
